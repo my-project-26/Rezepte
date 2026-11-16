@@ -1,5 +1,5 @@
 // Einfacher Offline-Cache: App-Dateien zuerst aus dem Netz, bei Offline aus dem Cache.
-const CACHE = "rezepte-v1";
+const CACHE = "rezepte-v2";
 const FILES = ["./", "index.html", "style.css", "app.js", "manifest.webmanifest", "icons/icon.svg", "icons/apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {

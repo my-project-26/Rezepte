@@ -14,8 +14,10 @@ const settings = {
 const db = (() => {
   let p;
   const open = () => (p ??= new Promise((res, rej) => {
-    const r = indexedDB.open("rezepte", 1);
-    r.onupgradeneeded = () => r.result.createObjectStore("recipes", { keyPath: "id" });
+    const r = indexedDB.open("rezepte", 2);
+    r.onupgradeneeded = () => {
+      if (!r.result.objectStoreNames.contains("recipes")) r.result.createObjectStore("recipes", { keyPath: "id" });
+    };
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
   }));
