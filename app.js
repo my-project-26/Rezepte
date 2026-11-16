@@ -13,14 +13,24 @@ const settings = {
 // ---------- IndexedDB ----------
 const db = (() => {
   let p;
-  const open = () => (p ??= new Promise((res, rej) => {
-    const r = indexedDB.open("rezepte-db", 1);
+  // Öffnet die DB; fehlt der Speicher (z. B. unvollständig angelegt), wird mit höherer Version nachgerüstet.
+  const openVersion = (version) => new Promise((res, rej) => {
+    const r = version ? indexedDB.open("rezepte-db", version) : indexedDB.open("rezepte-db");
     r.onupgradeneeded = () => {
       if (!r.result.objectStoreNames.contains("recipes")) r.result.createObjectStore("recipes", { keyPath: "id" });
     };
-    r.onsuccess = () => res(r.result);
+    r.onsuccess = () => {
+      const d = r.result;
+      d.onversionchange = () => d.close();
+      if (d.objectStoreNames.contains("recipes")) return res(d);
+      const next = d.version + 1;
+      d.close();
+      openVersion(next).then(res, rej);
+    };
     r.onerror = () => rej(r.error);
-  }));
+    r.onblocked = () => toast("Bitte andere Tabs dieser App schließen");
+  });
+  const open = () => (p ??= openVersion());
   const tx = async (mode, fn) => {
     const d = await open();
     return new Promise((res, rej) => {
