@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Rezepte</title>
+  <meta name="description" content="Rezepte aus Instagram, Facebook & Co. speichern – mit Zutaten, Kalorien, Eiweiß und Zubereitung.">
+  <meta name="theme-color" content="#c2410c">
+  <meta name="apple-mobile-web-app-title" content="Rezepte">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="icon-btn" id="backBtn" hidden aria-label="Zurück">‹</button>
+    <h1 id="pageTitle">Meine Rezepte</h1>
+    <button class="icon-btn" id="settingsBtn" aria-label="Einstellungen">⚙︎</button>
+  </header>
+
+  <main>
+    <!-- Liste -->
+    <section id="view-list" class="view">
+      <input type="search" id="search" placeholder="Rezepte durchsuchen …" autocomplete="off">
+      <div id="recipeList" class="grid"></div>
+      <div id="emptyState" class="empty" hidden>
+        <div class="empty-emoji">🥗</div>
+        <p><strong>Noch keine Rezepte.</strong></p>
+        <p>Teile ein Rezept-Video aus Instagram oder Facebook über <em>„Rezept speichern“</em> – oder tippe unten auf <strong>+</strong>.</p>
+        <button class="btn secondary" data-go="#einrichtung">So richtest du das Teilen ein</button>
+      </div>
+      <button class="fab" id="addBtn" aria-label="Neues Rezept">+</button>
+    </section>
+
+    <!-- Neues Rezept -->
+    <section id="view-new" class="view" hidden>
+      <div class="card">
+        <label for="srcUrl">Link zum Beitrag</label>
+        <input type="url" id="srcUrl" placeholder="https://www.instagram.com/reel/…" inputmode="url">
+        <label for="srcText">Beschreibungstext (falls vorhanden)</label>
+        <textarea id="srcText" rows="4" placeholder="Hier den Text aus der Beschreibung einfügen – oft steht das Rezept dort."></textarea>
+        <button class="btn ghost small" id="pasteBtn" type="button">📋 Aus Zwischenablage einfügen</button>
+      </div>
+
+      <div class="card">
+        <label>Screenshots</label>
+        <p class="hint">Am besten: 1 Screenshot vom fertigen Gericht (wird das Titelbild) + Screenshots von Zutaten/Beschreibung, falls im Video eingeblendet.</p>
+        <div id="thumbs" class="thumbs"></div>
+        <label class="btn secondary file-btn">
+          📷 Fotos auswählen
+          <input type="file" id="photoInput" accept="image/*" multiple hidden>
+        </label>
+      </div>
+
+      <button class="btn primary big" id="analyzeBtn">✨ Rezept erkennen</button>
+      <p class="hint center" id="keyHint" hidden>Zuerst in den <a href="#einstellungen">Einstellungen</a> deinen Claude-API-Key eintragen.</p>
+
+      <div id="progress" class="progress" hidden>
+        <div class="spinner"></div>
+        <p id="progressText">Rezept wird gelesen …</p>
+      </div>
+      <div id="error" class="error" hidden></div>
+    </section>
+
+    <!-- Detail -->
+    <section id="view-detail" class="view" hidden>
+      <div id="detail"></div>
+    </section>
+
+    <!-- Einstellungen -->
+    <section id="view-settings" class="view" hidden>
+      <div class="card">
+        <h2>Claude-API-Key</h2>
+        <p class="hint">Bekommst du unter <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. Der Key bleibt nur auf diesem Gerät gespeichert.</p>
+        <input type="password" id="apiKey" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+        <label for="model">Modell</label>
+        <select id="model">
+          <option value="claude-opus-5-5">Claude Opus 5.5 – beste Erkennung (≈ 5–15 ct/Rezept)</option>
+          <option value="claude-sonnet-5-5">Claude Sonnet 5.5 – günstiger (≈ 3–8 ct/Rezept)</option>
+          <option value="claude-haiku-5-5">Claude Haiku 5.5 – am günstigsten (&lt; 1 ct/Rezept)</option>
+        </select>
+        <label class="check"><input type="checkbox" id="useWeb"> Link im Internet nachlesen lassen (findet öfter das komplette Rezept, etwas teurer)</label>
+        <button class="btn primary" id="saveSettings">Speichern</button>
+        <p class="hint" id="settingsMsg"></p>
+      </div>
+
+      <div class="card">
+        <h2>Datensicherung</h2>
+        <p class="hint">Deine Rezepte liegen nur in Safari auf diesem Gerät. Exportiere ab und zu eine Sicherung (z. B. in „Dateien“ → iCloud Drive).</p>
+        <div class="row">
+          <button class="btn secondary" id="exportBtn">⬇︎ Exportieren</button>
+          <label class="btn secondary file-btn">⬆︎ Importieren<input type="file" id="importInput" accept="application/json,.json" hidden></label>
+        </div>
+        <p class="hint" id="storageMsg"></p>
+      </div>
+
+      <button class="btn secondary big" data-go="#einrichtung">📲 Teilen-Menü auf dem iPhone einrichten</button>
+    </section>
+
+    <!-- Einrichtung -->
+    <section id="view-setup" class="view" hidden>
+      <div class="card prose">
+        <h2>1. Kurzbefehl „Rezept speichern“ anlegen</h2>
+        <p>Damit die App im <strong>Teilen</strong>-Menü von Instagram, Facebook, TikTok usw. erscheint, brauchst du einmalig einen Kurzbefehl (App <em>Kurzbefehle</em>, ist auf jedem iPhone).</p>
+        <ol>
+          <li>App <strong>Kurzbefehle</strong> öffnen → oben rechts <strong>+</strong>.</li>
+          <li>Oben auf den Namen tippen → <strong>„Rezept speichern“</strong> nennen, Symbol nach Wunsch.</li>
+          <li>Unten auf <strong>ⓘ</strong> (Details) → <strong>„Im Share-Sheet anzeigen“</strong> einschalten → zurück.</li>
+          <li>Oben steht jetzt „Empfange <em>Alle</em> von <em>Share-Sheet</em>“. Auf <em>Alle</em> tippen und nur <strong>URLs</strong> und <strong>Text</strong> anhaken.</li>
+          <li>Aktion hinzufügen: nach <strong>„URL codieren“</strong> suchen → antippen. Sie codiert automatisch die <em>Kurzbefehl-Eingabe</em>.</li>
+          <li>Aktion hinzufügen: <strong>„URL“</strong>. Als Adresse eintippen:<br>
+            <code class="copy" id="shortcutUrl"></code><br>
+            und direkt dahinter die blaue Variable <strong>„URL-codierter Text“</strong> einsetzen (Tastatur-Leiste → Variable auswählen).</li>
+          <li>Aktion hinzufügen: <strong>„URLs öffnen“</strong>.</li>
+          <li>Fertig → oben rechts <strong>Fertig</strong>.</li>
+        </ol>
+        <p>Jetzt in Instagram beim Rezept auf <strong>Teilen</strong> (Papierflieger) → ganz unten <strong>„Mehr“</strong> bzw. in der unteren App-Reihe nach rechts wischen → <strong>„Rezept speichern“</strong>. Tipp: Im Teilen-Menü auf <em>Bearbeiten</em> tippen und den Kurzbefehl zu den Favoriten hinzufügen.</p>
+
+        <h2>2. App auf den Home-Bildschirm</h2>
+        <ol>
+          <li>Diese Seite in <strong>Safari</strong> öffnen → Teilen-Symbol → <strong>„Zum Home-Bildschirm“</strong>.</li>
+          <li>Falls ein Schalter <strong>„Als Web-App öffnen“</strong> erscheint: <strong>ausschalten</strong>. So landen geteilte Rezepte und das Home-Symbol im selben Speicher.</li>
+        </ol>
+
+        <h2>3. Gut zu wissen</h2>
+        <ul>
+          <li>Instagram & Facebook geben beim Teilen meist nur den <strong>Link</strong> weiter. Steht das Rezept in der Beschreibung, kopiere den Text oder mache einen <strong>Screenshot</strong> – die App liest ihn mit.</li>
+          <li>Für das <strong>Titelbild</strong>: Video an der Stelle pausieren, wo das fertige Gericht zu sehen ist → Screenshot → in der App hinzufügen.</li>
+          <li>Kalorien &amp; Eiweiß werden geschätzt, wenn das Rezept keine Angaben macht – das steht dann beim Rezept dabei.</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
