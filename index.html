@@ -1,139 +1,247 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Rezepte</title>
-  <meta name="description" content="Rezepte aus Instagram, Facebook & Co. speichern – mit Zutaten, Kalorien, Eiweiß und Zubereitung.">
-  <meta name="theme-color" content="#c2410c">
-  <meta name="apple-mobile-web-app-title" content="Rezepte">
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="style.css?v=4">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Meine Rezepte</title>
+<style>
+:root{--bg:#faf6f0;--card:#fff;--tx:#2b2620;--mu:#7a6f62;--ac:#d9622b;--bd:#e8dfd2;--in:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1915;--card:#27231e;--tx:#f2ebe0;--mu:#a89c8b;--ac:#f08a52;--bd:#3a342c;--in:#1c1915}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{position:sticky;top:0;background:var(--bg);padding:14px 16px 10px;z-index:5;border-bottom:1px solid var(--bd)}
+h1{margin:0 0 10px;font-size:22px}
+.row{display:flex;gap:8px}
+input,textarea{width:100%;padding:11px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--in);color:var(--tx);font:inherit;font-size:16px}
+textarea{min-height:110px;resize:vertical}
+label{display:block;margin:14px 0 5px;font-weight:600;font-size:14px}
+button{border:0;border-radius:10px;padding:11px 16px;font:inherit;font-weight:600;cursor:pointer;background:var(--ac);color:#fff}
+button.sec{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+button.del{background:#c0392b}
+main{padding:14px 16px 90px;max-width:720px;margin:auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;overflow:hidden;cursor:pointer}
+.card .ph{aspect-ratio:1;background:var(--bd);display:flex;align-items:center;justify-content:center;font-size:36px}
+.card img{width:100%;height:100%;object-fit:cover;display:block}
+.card .t{padding:10px;font-weight:600;font-size:14px}
+.card .m{padding:0 10px 10px;color:var(--mu);font-size:12px}
+.fab{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:50%;font-size:28px;padding:0;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+.view{display:none}
+.view.on{display:block}
+.thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px}
+.thumb{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--bd)}
+.thumb img{width:100%;height:100%;object-fit:cover}
+.thumb b{position:absolute;top:3px;right:3px;background:rgba(0,0,0,.65);color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.add{border:2px dashed var(--bd);display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--mu);cursor:pointer}
+.imgs{display:grid;gap:10px;margin:12px 0}
+.imgs img{width:100%;border-radius:12px;cursor:zoom-in}
+pre{white-space:pre-wrap;font:inherit;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin:6px 0}
+h3{margin:18px 0 4px}
+a.src{display:inline-block;margin:8px 0;color:var(--ac);font-weight:600;word-break:break-all}
+.empty{text-align:center;color:var(--mu);margin-top:50px}
+.lb{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;z-index:20}
+.lb.on{display:flex}
+.lb img{max-width:100%;max-height:100%}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+</style>
 </head>
 <body>
-  <header class="topbar">
-    <button class="icon-btn" id="backBtn" hidden aria-label="Zurück">‹</button>
-    <h1 id="pageTitle">Meine Rezepte</h1>
-    <button class="icon-btn" id="settingsBtn" aria-label="Einstellungen">⚙︎</button>
+
+<div id="v-list" class="view on">
+  <header>
+    <h1>🍳 Meine Rezepte</h1>
+    <div class="row"><input id="q" type="search" placeholder="Suchen (Titel, Zutaten …)"></div>
   </header>
-
   <main>
-    <!-- Liste -->
-    <section id="view-list" class="view">
-      <input type="search" id="search" placeholder="Rezepte durchsuchen …" autocomplete="off">
-      <div id="recipeList" class="grid"></div>
-      <div id="emptyState" class="empty" hidden>
-        <div class="empty-emoji">🥗</div>
-        <p><strong>Noch keine Rezepte.</strong></p>
-        <p>Teile ein Rezept-Video aus Instagram oder Facebook über <em>„Rezept speichern“</em> – oder tippe unten auf <strong>+</strong>.</p>
-        <button class="btn secondary" data-go="#einrichtung">So richtest du das Teilen ein</button>
-      </div>
-      <button class="fab" id="addBtn" aria-label="Neues Rezept">+</button>
-    </section>
-
-    <!-- Neues Rezept -->
-    <section id="view-new" class="view" hidden>
-      <div class="card">
-        <label for="srcUrl">Link zum Beitrag</label>
-        <input type="url" id="srcUrl" placeholder="https://www.instagram.com/reel/…" inputmode="url">
-        <label for="srcText">Beschreibungstext (falls vorhanden)</label>
-        <textarea id="srcText" rows="4" placeholder="Hier den Text aus der Beschreibung einfügen – oft steht das Rezept dort."></textarea>
-        <button class="btn ghost small" id="pasteBtn" type="button">📋 Aus Zwischenablage einfügen</button>
-      </div>
-
-      <div class="card">
-        <label>Screenshots</label>
-        <p class="hint">Am besten: 1 Screenshot vom fertigen Gericht (wird das Titelbild) + Screenshots von Zutaten/Beschreibung, falls im Video eingeblendet.</p>
-        <div id="thumbs" class="thumbs"></div>
-        <label class="btn secondary file-btn">
-          📷 Fotos auswählen
-          <input type="file" id="photoInput" accept="image/*" multiple hidden>
-        </label>
-      </div>
-
-      <button class="btn primary big" id="analyzeBtn">✨ Rezept erkennen</button>
-      <p class="hint center" id="keyHint" hidden>Zuerst in den <a href="#einstellungen">Einstellungen</a> deinen Claude-API-Key eintragen.</p>
-
-      <div id="progress" class="progress" hidden>
-        <div class="spinner"></div>
-        <p id="progressText">Rezept wird gelesen …</p>
-      </div>
-      <div id="error" class="error" hidden></div>
-    </section>
-
-    <!-- Detail -->
-    <section id="view-detail" class="view" hidden>
-      <div id="detail"></div>
-    </section>
-
-    <!-- Einstellungen -->
-    <section id="view-settings" class="view" hidden>
-      <div class="card">
-        <h2>Claude-API-Key</h2>
-        <p class="hint">Bekommst du unter <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. Der Key bleibt nur auf diesem Gerät gespeichert.</p>
-        <input type="password" id="apiKey" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
-        <label for="model">Modell</label>
-        <select id="model">
-          <option value="claude-opus-5-5">Claude Opus 5.5 – beste Erkennung (≈ 5–15 ct/Rezept)</option>
-          <option value="claude-sonnet-5-5">Claude Sonnet 5.5 – günstiger (≈ 3–8 ct/Rezept)</option>
-          <option value="claude-haiku-5-5">Claude Haiku 5.5 – am günstigsten (&lt; 1 ct/Rezept)</option>
-        </select>
-        <label class="check"><input type="checkbox" id="useWeb"> Link im Internet nachlesen lassen (findet öfter das komplette Rezept, etwas teurer)</label>
-        <button class="btn primary" id="saveSettings">Speichern</button>
-        <p class="hint" id="settingsMsg"></p>
-      </div>
-
-      <div class="card">
-        <h2>Datensicherung</h2>
-        <p class="hint">Deine Rezepte liegen nur in Safari auf diesem Gerät. Exportiere ab und zu eine Sicherung (z. B. in „Dateien“ → iCloud Drive).</p>
-        <div class="row">
-          <button class="btn secondary" id="exportBtn">⬇︎ Exportieren</button>
-          <label class="btn secondary file-btn">⬆︎ Importieren<input type="file" id="importInput" accept="application/json,.json" hidden></label>
-        </div>
-        <p class="hint" id="storageMsg"></p>
-      </div>
-
-      <button class="btn secondary big" data-go="#einrichtung">📲 Teilen-Menü auf dem iPhone einrichten</button>
-    </section>
-
-    <!-- Einrichtung -->
-    <section id="view-setup" class="view" hidden>
-      <div class="card prose">
-        <h2>1. Kurzbefehl „Rezept speichern“ anlegen</h2>
-        <p>Damit die App im <strong>Teilen</strong>-Menü von Instagram, Facebook, TikTok usw. erscheint, brauchst du einmalig einen Kurzbefehl (App <em>Kurzbefehle</em>, ist auf jedem iPhone).</p>
-        <ol>
-          <li>App <strong>Kurzbefehle</strong> öffnen → oben rechts <strong>+</strong>.</li>
-          <li>Oben auf den Namen tippen → <strong>„Rezept speichern“</strong> nennen, Symbol nach Wunsch.</li>
-          <li>Unten auf <strong>ⓘ</strong> (Details) → <strong>„Im Share-Sheet anzeigen“</strong> einschalten → zurück.</li>
-          <li>Oben steht jetzt „Empfange <em>Alle</em> von <em>Share-Sheet</em>“. Auf <em>Alle</em> tippen und nur <strong>URLs</strong> und <strong>Text</strong> anhaken.</li>
-          <li>Aktion hinzufügen: nach <strong>„URL codieren“</strong> suchen → antippen. Sie codiert automatisch die <em>Kurzbefehl-Eingabe</em>.</li>
-          <li>Aktion hinzufügen: <strong>„URL“</strong>. Als Adresse eintippen:<br>
-            <code class="copy" id="shortcutUrl"></code><br>
-            und direkt dahinter die blaue Variable <strong>„URL-codierter Text“</strong> einsetzen (Tastatur-Leiste → Variable auswählen).</li>
-          <li>Aktion hinzufügen: <strong>„URLs öffnen“</strong>.</li>
-          <li>Fertig → oben rechts <strong>Fertig</strong>.</li>
-        </ol>
-        <p>Jetzt in Instagram beim Rezept auf <strong>Teilen</strong> (Papierflieger) → ganz unten <strong>„Mehr“</strong> bzw. in der unteren App-Reihe nach rechts wischen → <strong>„Rezept speichern“</strong>. Tipp: Im Teilen-Menü auf <em>Bearbeiten</em> tippen und den Kurzbefehl zu den Favoriten hinzufügen.</p>
-
-        <h2>2. App auf den Home-Bildschirm</h2>
-        <ol>
-          <li>Diese Seite in <strong>Safari</strong> öffnen → Teilen-Symbol → <strong>„Zum Home-Bildschirm“</strong>.</li>
-          <li>Falls ein Schalter <strong>„Als Web-App öffnen“</strong> erscheint: <strong>ausschalten</strong>. So landen geteilte Rezepte und das Home-Symbol im selben Speicher.</li>
-        </ol>
-
-        <h2>3. Gut zu wissen</h2>
-        <ul>
-          <li>Instagram & Facebook geben beim Teilen meist nur den <strong>Link</strong> weiter. Steht das Rezept in der Beschreibung, kopiere den Text oder mache einen <strong>Screenshot</strong> – die App liest ihn mit.</li>
-          <li>Für das <strong>Titelbild</strong>: Video an der Stelle pausieren, wo das fertige Gericht zu sehen ist → Screenshot → in der App hinzufügen.</li>
-          <li>Kalorien &amp; Eiweiß werden geschätzt, wenn das Rezept keine Angaben macht – das steht dann beim Rezept dabei.</li>
-        </ul>
-      </div>
-    </section>
+    <div id="grid" class="grid"></div>
+    <div id="empty" class="empty">Noch keine Rezepte.<br>Tippe auf + zum Hinzufügen.</div>
+    <div class="bar">
+      <button class="sec" id="exp">Backup exportieren</button>
+      <button class="sec" id="imp">Backup importieren</button>
+      <input id="impf" type="file" accept="application/json" hidden>
+    </div>
   </main>
+  <button class="fab" id="new">+</button>
+</div>
 
-  <div id="toast" class="toast" hidden></div>
-  <script type="module" src="app.js?v=4"></script>
+<div id="v-form" class="view">
+  <header><h1 id="ftitle">Neues Rezept</h1></header>
+  <main>
+    <label>Titel</label>
+    <input id="f-title" placeholder="z. B. Protein-Pasta">
+    <label>Link zum Video (Facebook / Instagram)</label>
+    <input id="f-link" type="url" placeholder="https://…">
+    <label>Bilder / Screenshots (max. 4)</label>
+    <div class="thumbs" id="thumbs"></div>
+    <input id="f-file" type="file" accept="image/*" multiple hidden>
+    <label>Zutaten</label>
+    <textarea id="f-ing" placeholder="Eine Zutat pro Zeile"></textarea>
+    <label>Zubereitung</label>
+    <textarea id="f-steps"></textarea>
+    <label>Nährwerte</label>
+    <textarea id="f-nutr" style="min-height:70px" placeholder="z. B. 520 kcal, 38 g Eiweiß, 45 g Kohlenhydrate, 18 g Fett"></textarea>
+    <div class="bar">
+      <button id="save">Speichern</button>
+      <button class="sec" id="cancel">Abbrechen</button>
+    </div>
+  </main>
+</div>
+
+<div id="v-det" class="view">
+  <header><div class="row"><button class="sec" id="back">← Zurück</button></div></header>
+  <main id="det"></main>
+</div>
+
+<div class="lb" id="lb"><img id="lbi" alt=""></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const MAX_IMG=4;
+let db, recipes=[], cur=null, formImgs=[];
+
+/* ---------- IndexedDB ---------- */
+function openDB(){return new Promise((res,rej)=>{
+  const r=indexedDB.open('rezepte',1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('r',{keyPath:'id'});
+  r.onsuccess=()=>res(r.result);
+  r.onerror=()=>rej(r.error);
+});}
+const tx=(m)=>db.transaction('r',m).objectStore('r');
+const getAll=()=>new Promise((res,rej)=>{const q=tx('readonly').getAll();q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)});
+const put=o=>new Promise((res,rej)=>{const q=tx('readwrite').put(o);q.onsuccess=()=>res();q.onerror=()=>rej(q.error)});
+const del=id=>new Promise((res,rej)=>{const q=tx('readwrite').delete(id);q.onsuccess=()=>res();q.onerror=()=>rej(q.error)});
+
+/* ---------- Bilder verkleinern ---------- */
+function shrink(file){return new Promise((res,rej)=>{
+  const img=new Image(), u=URL.createObjectURL(file);
+  img.onload=()=>{
+    const m=1400, s=Math.min(1,m/Math.max(img.width,img.height));
+    const c=document.createElement('canvas');
+    c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);
+    c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    URL.revokeObjectURL(u);
+    res(c.toDataURL('image/jpeg',0.75));
+  };
+  img.onerror=()=>rej(new Error('Bild konnte nicht gelesen werden'));
+  img.src=u;
+});}
+
+/* ---------- Ansichten ---------- */
+function show(id){document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));$(id).classList.add('on');window.scrollTo(0,0)}
+const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function renderList(){
+  const q=$('#q').value.trim().toLowerCase();
+  const list=recipes.filter(r=>!q||[r.title,r.ing,r.steps,r.link].join(' ').toLowerCase().includes(q))
+    .sort((a,b)=>b.created-a.created);
+  $('#empty').style.display=recipes.length?'none':'block';
+  $('#grid').innerHTML=list.map(r=>`
+    <div class="card" data-id="${r.id}">
+      <div class="ph">${r.imgs[0]?`<img src="${r.imgs[0]}" alt="">`:'🍽️'}</div>
+      <div class="t">${esc(r.title)||'Ohne Titel'}</div>
+      <div class="m">${r.imgs.length} Bild${r.imgs.length===1?'':'er'}${r.link?' · Link':''}</div>
+    </div>`).join('');
+}
+
+function renderDetail(r){
+  cur=r;
+  $('#det').innerHTML=`
+    <h2>${esc(r.title)||'Ohne Titel'}</h2>
+    ${r.link?`<a class="src" href="${esc(r.link)}" target="_blank" rel="noopener">▶ Video öffnen</a>`:''}
+    <div class="imgs">${r.imgs.map(s=>`<img src="${s}" alt="">`).join('')}</div>
+    ${r.ing?`<h3>Zutaten</h3><pre>${esc(r.ing)}</pre>`:''}
+    ${r.steps?`<h3>Zubereitung</h3><pre>${esc(r.steps)}</pre>`:''}
+    ${r.nutr?`<h3>Nährwerte</h3><pre>${esc(r.nutr)}</pre>`:''}
+    <div class="bar">
+      <button id="edit">Bearbeiten</button>
+      <button class="del" id="rm">Löschen</button>
+    </div>`;
+  $('#edit').onclick=()=>openForm(r);
+  $('#rm').onclick=async()=>{
+    if(confirm('Rezept wirklich löschen?')){await del(r.id);await reload();show('#v-list')}
+  };
+  show('#v-det');
+}
+
+function renderThumbs(){
+  let h=formImgs.map((s,i)=>`<div class="thumb"><img src="${s}" alt=""><b data-i="${i}">×</b></div>`).join('');
+  if(formImgs.length<MAX_IMG)h+=`<div class="thumb add" id="addimg">＋</div>`;
+  $('#thumbs').innerHTML=h;
+  $('#thumbs').querySelectorAll('b').forEach(b=>b.onclick=()=>{formImgs.splice(+b.dataset.i,1);renderThumbs()});
+  const a=$('#addimg');if(a)a.onclick=()=>$('#f-file').click();
+}
+
+function openForm(r){
+  cur=r||null;
+  $('#ftitle').textContent=r?'Rezept bearbeiten':'Neues Rezept';
+  $('#f-title').value=r?.title||'';
+  $('#f-link').value=r?.link||'';
+  $('#f-ing').value=r?.ing||'';
+  $('#f-steps').value=r?.steps||'';
+  $('#f-nutr').value=r?.nutr||'';
+  formImgs=r?[...r.imgs]:[];
+  renderThumbs();show('#v-form');
+}
+
+/* ---------- Events ---------- */
+$('#new').onclick=()=>openForm(null);
+$('#cancel').onclick=()=>show('#v-list');
+$('#back').onclick=()=>show('#v-list');
+$('#q').oninput=renderList;
+$('#grid').onclick=e=>{const c=e.target.closest('.card');if(c)renderDetail(recipes.find(r=>r.id===c.dataset.id))};
+
+$('#f-file').onchange=async e=>{
+  const files=[...e.target.files];e.target.value='';
+  for(const f of files){
+    if(formImgs.length>=MAX_IMG){alert('Maximal '+MAX_IMG+' Bilder pro Rezept.');break}
+    try{formImgs.push(await shrink(f))}catch(err){alert(err.message)}
+  }
+  renderThumbs();
+};
+
+$('#save').onclick=async()=>{
+  const title=$('#f-title').value.trim(), link=$('#f-link').value.trim();
+  if(!title&&!link&&!formImgs.length){alert('Bitte mindestens Titel, Link oder ein Bild angeben.');return}
+  const r={
+    id:cur?cur.id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())),
+    created:cur?cur.created:Date.now(),
+    title,link,imgs:formImgs,
+    ing:$('#f-ing').value.trim(),
+    steps:$('#f-steps').value.trim(),
+    nutr:$('#f-nutr').value.trim()
+  };
+  try{await put(r);await reload();renderDetail(recipes.find(x=>x.id===r.id))}
+  catch(err){alert('Speichern fehlgeschlagen: '+err.message)}
+};
+
+/* Lightbox */
+$('#det').onclick=e=>{if(e.target.matches('.imgs img')){$('#lbi').src=e.target.src;$('#lb').classList.add('on')}};
+$('#lb').onclick=()=>$('#lb').classList.remove('on');
+
+/* Backup */
+$('#exp').onclick=()=>{
+  const b=new Blob([JSON.stringify(recipes)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);
+  a.download='rezepte-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();
+};
+$('#imp').onclick=()=>$('#impf').click();
+$('#impf').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const data=JSON.parse(await f.text());
+    if(!Array.isArray(data))throw new Error('Ungültige Datei');
+    for(const r of data)if(r&&r.id&&Array.isArray(r.imgs))await put(r);
+    await reload();alert('Backup importiert.');
+  }catch(err){alert('Import fehlgeschlagen: '+err.message)}
+  e.target.value='';
+};
+
+async function reload(){recipes=await getAll();renderList()}
+(async()=>{
+  try{db=await openDB();await reload()}
+  catch(err){document.body.innerHTML='<p style="padding:20px">Speicher nicht verfügbar: '+esc(err.message)+'</p>'}
+})();
+</script>
 </body>
 </html>
+
