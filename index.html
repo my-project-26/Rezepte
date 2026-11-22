@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Meine Rezepte</title>
 <style>
-:root{--bg:#faf6f0;--card:#fff;--tx:#2b2620;--mu:#7a6f62;--ac:#d9622b;--bd:#e8dfd2;--in:#fff}
-@media (prefers-color-scheme:dark){:root{--bg:#1c1915;--card:#27231e;--tx:#f2ebe0;--mu:#a89c8b;--ac:#f08a52;--bd:#3a342c;--in:#1c1915}}
+:root{--bg:#faf6f0;--card:#fff;--tx:#2b2620;--mu:#7a6f62;--ac:#d9622b;--bd:#e8dfd2;--in:#fff;--wa:#fff3d6}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1915;--card:#27231e;--tx:#f2ebe0;--mu:#a89c8b;--ac:#f08a52;--bd:#3a342c;--in:#1c1915;--wa:#3a2f14}}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
 header{position:sticky;top:0;background:var(--bg);padding:14px 16px 10px;z-index:5;border-bottom:1px solid var(--bd)}
@@ -21,11 +21,12 @@ button.sec{background:transparent;color:var(--tx);border:1px solid var(--bd)}
 button.del{background:#c0392b}
 main{padding:14px 16px 90px;max-width:720px;margin:auto}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;overflow:hidden;cursor:pointer}
+.card{position:relative;background:var(--card);border:1px solid var(--bd);border-radius:14px;overflow:hidden;cursor:pointer}
 .card .ph{aspect-ratio:1;background:var(--bd);display:flex;align-items:center;justify-content:center;font-size:36px}
 .card img{width:100%;height:100%;object-fit:cover;display:block}
 .card .t{padding:10px;font-weight:600;font-size:14px}
 .card .m{padding:0 10px 10px;color:var(--mu);font-size:12px}
+.badge{position:absolute;top:8px;left:8px;background:var(--ac);color:#fff;border-radius:8px;padding:3px 8px;font-size:12px;font-weight:600}
 .fab{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:50%;font-size:28px;padding:0;box-shadow:0 4px 14px rgba(0,0,0,.3)}
 .view{display:none}
 .view.on{display:block}
@@ -50,6 +51,10 @@ a.src{display:inline-block;margin:8px 0;color:var(--ac);font-weight:600;word-bre
 .top{display:flex;justify-content:space-between;align-items:center}
 .top h1{margin:0}
 .gear{background:transparent;color:var(--tx);font-size:22px;padding:4px 8px}
+.q{background:var(--wa);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:14px;display:none}
+.q.on{display:block}
+.q button{width:100%;margin-top:8px}
+.note{background:var(--wa);border-radius:10px;padding:10px 12px;font-size:14px;margin-top:10px}
 </style>
 </head>
 <body>
@@ -60,6 +65,12 @@ a.src{display:inline-block;margin:8px 0;color:var(--ac);font-weight:600;word-bre
     <div class="row" style="margin-top:10px"><input id="q" type="search" placeholder="Suchen (Titel, Zutaten …)"></div>
   </header>
   <main>
+    <div class="q" id="queue">
+      <b id="qtxt"></b>
+      <div style="font-size:13px;color:var(--mu);margin-top:2px">Starte n8n auf dem Rechner und tippe dann auf den Button.</div>
+      <button id="runq">▶ Alle offenen jetzt verarbeiten</button>
+      <div class="st" id="qst"></div>
+    </div>
     <div id="grid" class="grid"></div>
     <div id="empty" class="empty">Noch keine Rezepte.<br>Tippe auf + zum Hinzufügen.</div>
     <div class="bar">
@@ -79,9 +90,10 @@ a.src{display:inline-block;margin:8px 0;color:var(--ac);font-weight:600;word-bre
     <label>Bilder / Screenshots (max. 4)</label>
     <div class="thumbs" id="thumbs"></div>
     <input id="f-file" type="file" accept="image/*" multiple hidden>
-    <button class="ai" id="ai" disabled>✨ Rezept automatisch auslesen</button>
+    <div class="note" id="hint">Nur Link und Bilder reichen: Das Rezept wird als „offen“ gespeichert und später gesammelt ausgelesen.</div>
+    <button class="ai sec" id="ai" disabled>✨ Jetzt sofort auslesen (n8n muss laufen)</button>
     <div class="st" id="aist"></div>
-    <label>Titel</label>
+    <label>Titel (optional)</label>
     <input id="f-title" placeholder="z. B. Protein-Pasta">
     <label>Zutaten</label>
     <textarea id="f-ing" placeholder="Eine Zutat pro Zeile"></textarea>
@@ -91,6 +103,7 @@ a.src{display:inline-block;margin:8px 0;color:var(--ac);font-weight:600;word-bre
     <textarea id="f-nutr" style="min-height:70px" placeholder="z. B. 520 kcal, 38 g Eiweiß, 45 g Kohlenhydrate, 18 g Fett"></textarea>
     <div class="bar">
       <button id="save">Speichern</button>
+      <button id="saven">Speichern &amp; nächstes</button>
       <button class="sec" id="cancel">Abbrechen</button>
     </div>
   </main>
@@ -120,9 +133,32 @@ const getAll=()=>new Promise((res,rej)=>{const q=tx('readonly').getAll();q.onsuc
 const put=o=>new Promise((res,rej)=>{const q=tx('readwrite').put(o);q.onsuccess=()=>res();q.onerror=()=>rej(q.error)});
 const del=id=>new Promise((res,rej)=>{const q=tx('readwrite').delete(id);q.onsuccess=()=>res();q.onerror=()=>rej(q.error)});
 
-/* ---------- Webhook-Einstellung ---------- */
+/* ---------- Webhook ---------- */
 const getHook=()=>{try{return localStorage.getItem(HOOK_KEY)||''}catch(e){return ''}};
 const setHook=v=>{try{localStorage.setItem(HOOK_KEY,v)}catch(e){}};
+function ensureHook(){
+  let h=getHook();
+  if(!h){
+    h=(prompt('n8n-Webhook-URL eintragen (wird nur in diesem Browser gespeichert):','')||'').trim();
+    if(h)setHook(h);
+  }
+  return h;
+}
+async function callHook(hook,images,link){
+  const res=await fetch(hook,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({images,link:link||''})});
+  if(!res.ok)throw new Error('Server antwortete mit '+res.status);
+  return await res.json();
+}
+function fmt(d){
+  return {
+    title:d.title||'',
+    ing:Array.isArray(d.ingredients)?d.ingredients.join('\n'):'',
+    steps:Array.isArray(d.steps)?d.steps.map((s,i)=>(i+1)+'. '+String(s).replace(/^\d+[\.\)]\s*/,'')).join('\n'):'',
+    nutr:d.nutrition?d.nutrition+(d.nutrition_estimated?'\n(geschätzt)':''):''
+  };
+}
+const isNet=e=>e instanceof TypeError;
 
 /* ---------- Bilder verkleinern ---------- */
 function shrink(file){return new Promise((res,rej)=>{
@@ -142,6 +178,7 @@ function shrink(file){return new Promise((res,rej)=>{
 /* ---------- Ansichten ---------- */
 function show(id){document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));$(id).classList.add('on');window.scrollTo(0,0)}
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pending=()=>recipes.filter(r=>r.status==='offen'&&r.imgs.length);
 
 function renderList(){
   const q=$('#q').value.trim().toLowerCase();
@@ -150,16 +187,21 @@ function renderList(){
   $('#empty').style.display=recipes.length?'none':'block';
   $('#grid').innerHTML=list.map(r=>`
     <div class="card" data-id="${r.id}">
+      ${r.status==='offen'?'<span class="badge">⏳ offen</span>':''}
       <div class="ph">${r.imgs[0]?`<img src="${r.imgs[0]}" alt="">`:'🍽️'}</div>
       <div class="t">${esc(r.title)||'Ohne Titel'}</div>
       <div class="m">${r.imgs.length} Bild${r.imgs.length===1?'':'er'}${r.link?' · Link':''}</div>
     </div>`).join('');
+  const n=pending().length;
+  $('#queue').classList.toggle('on',n>0);
+  $('#qtxt').textContent=n+' Rezept'+(n===1?'':'e')+' warten auf Verarbeitung';
 }
 
 function renderDetail(r){
   cur=r;
   $('#det').innerHTML=`
     <h2>${esc(r.title)||'Ohne Titel'}</h2>
+    ${r.status==='offen'?'<div class="note">⏳ Noch nicht ausgelesen. Wird bei „Alle offenen verarbeiten“ erledigt.</div>':''}
     ${r.link?`<a class="src" href="${esc(r.link)}" target="_blank" rel="noopener">▶ Video öffnen</a>`:''}
     <div class="imgs">${r.imgs.map(s=>`<img src="${s}" alt="">`).join('')}</div>
     ${r.ing?`<h3>Zutaten</h3><pre>${esc(r.ing)}</pre>`:''}
@@ -186,8 +228,9 @@ function renderThumbs(){
 }
 
 function setStatus(t,err){const s=$('#aist');s.textContent=t||'';s.className='st'+(err?' err':'')}
+function qStatus(t,err){const s=$('#qst');s.textContent=t||'';s.className='st'+(err?' err':'')}
 
-function openForm(r){
+function openForm(r,msg){
   cur=r||null;
   $('#ftitle').textContent=r?'Rezept bearbeiten':'Neues Rezept';
   $('#f-title').value=r?.title||'';
@@ -196,32 +239,68 @@ function openForm(r){
   $('#f-steps').value=r?.steps||'';
   $('#f-nutr').value=r?.nutr||'';
   formImgs=r?[...r.imgs]:[];
-  setStatus('');renderThumbs();show('#v-form');
+  setStatus(msg||'');renderThumbs();show('#v-form');
 }
 
-/* ---------- Automatisch auslesen ---------- */
+/* ---------- Sofort auslesen (Formular) ---------- */
 async function autoRead(){
-  let hook=getHook();
-  if(!hook){
-    hook=prompt('n8n-Webhook-URL eintragen (wird nur in diesem Browser gespeichert):','');
-    if(!hook)return;
-    setHook(hook.trim());hook=hook.trim();
-  }
+  const hook=ensureHook();if(!hook)return;
   const btn=$('#ai');btn.disabled=true;setStatus('Lese Rezept aus … das dauert ca. 10–30 Sekunden.');
   try{
-    const res=await fetch(hook,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({images:formImgs,link:$('#f-link').value.trim()})});
-    if(!res.ok)throw new Error('Server antwortete mit '+res.status);
-    const d=await res.json();
-    if(d.title&&!$('#f-title').value.trim())$('#f-title').value=d.title;
-    if(Array.isArray(d.ingredients))$('#f-ing').value=d.ingredients.join('\n');
-    if(Array.isArray(d.steps))$('#f-steps').value=d.steps.map((s,i)=>(i+1)+'. '+String(s).replace(/^\d+[\.\)]\s*/,'')).join('\n');
-    if(d.nutrition)$('#f-nutr').value=d.nutrition+(d.nutrition_estimated?'\n(geschätzt)':'');
+    const f=fmt(await callHook(hook,formImgs,$('#f-link').value.trim()));
+    if(f.title&&!$('#f-title').value.trim())$('#f-title').value=f.title;
+    if(f.ing)$('#f-ing').value=f.ing;
+    if(f.steps)$('#f-steps').value=f.steps;
+    if(f.nutr)$('#f-nutr').value=f.nutr;
     setStatus('Fertig. Bitte kurz prüfen und speichern.');
   }catch(err){
-    setStatus('Fehler: '+err.message+'. Ist n8n erreichbar und die URL korrekt?',true);
+    setStatus(isNet(err)?'n8n nicht erreichbar. Speichere das Rezept einfach als „offen“ und verarbeite es später.':'Fehler: '+err.message,true);
   }
   btn.disabled=!formImgs.length;
+}
+
+/* ---------- Warteschlange abarbeiten ---------- */
+async function runQueue(){
+  const list=pending();if(!list.length)return;
+  const hook=ensureHook();if(!hook)return;
+  const btn=$('#runq');btn.disabled=true;
+  let ok=0,fail=0,stopped=false;
+  for(let i=0;i<list.length;i++){
+    const r=list[i];
+    qStatus('Verarbeite '+(i+1)+' von '+list.length+': '+(r.title||'Ohne Titel')+' …');
+    try{
+      const f=fmt(await callHook(hook,r.imgs,r.link));
+      if(f.title&&!r.title)r.title=f.title;
+      r.ing=f.ing||r.ing;r.steps=f.steps||r.steps;r.nutr=f.nutr||r.nutr;
+      r.status='fertig';
+      await put(r);ok++;
+      recipes=await getAll();renderList();$('#runq').disabled=true;
+    }catch(err){
+      if(isNet(err)){stopped=true;break}
+      fail++;
+    }
+  }
+  btn.disabled=false;
+  if(stopped)qStatus('n8n nicht erreichbar. Läuft n8n und stimmt die URL (⚙️)? Offene Rezepte bleiben erhalten.',true);
+  else qStatus('Fertig: '+ok+' verarbeitet'+(fail?', '+fail+' fehlgeschlagen (bleiben offen)':'')+'.',fail>0);
+}
+
+/* ---------- Speichern ---------- */
+async function doSave(next){
+  const title=$('#f-title').value.trim(), link=$('#f-link').value.trim();
+  const ing=$('#f-ing').value.trim(), steps=$('#f-steps').value.trim(), nutr=$('#f-nutr').value.trim();
+  if(!title&&!link&&!formImgs.length){alert('Bitte mindestens Titel, Link oder ein Bild angeben.');return}
+  const r={
+    id:cur?cur.id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())),
+    created:cur?cur.created:Date.now(),
+    title,link,imgs:formImgs,ing,steps,nutr,
+    status:(formImgs.length&&!ing&&!steps&&!nutr)?'offen':'fertig'
+  };
+  try{
+    await put(r);await reload();
+    if(next)openForm(null,'Gespeichert ✓ Nächstes Rezept:');
+    else renderDetail(recipes.find(x=>x.id===r.id));
+  }catch(err){alert('Speichern fehlgeschlagen: '+err.message)}
 }
 
 /* ---------- Events ---------- */
@@ -230,6 +309,9 @@ $('#cancel').onclick=()=>show('#v-list');
 $('#back').onclick=()=>show('#v-list');
 $('#q').oninput=renderList;
 $('#ai').onclick=autoRead;
+$('#runq').onclick=runQueue;
+$('#save').onclick=()=>doSave(false);
+$('#saven').onclick=()=>doSave(true);
 $('#gear').onclick=()=>{
   const v=prompt('n8n-Webhook-URL:',getHook());
   if(v!==null)setHook(v.trim());
@@ -243,21 +325,6 @@ $('#f-file').onchange=async e=>{
     try{formImgs.push(await shrink(f))}catch(err){alert(err.message)}
   }
   renderThumbs();
-};
-
-$('#save').onclick=async()=>{
-  const title=$('#f-title').value.trim(), link=$('#f-link').value.trim();
-  if(!title&&!link&&!formImgs.length){alert('Bitte mindestens Titel, Link oder ein Bild angeben.');return}
-  const r={
-    id:cur?cur.id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())),
-    created:cur?cur.created:Date.now(),
-    title,link,imgs:formImgs,
-    ing:$('#f-ing').value.trim(),
-    steps:$('#f-steps').value.trim(),
-    nutr:$('#f-nutr').value.trim()
-  };
-  try{await put(r);await reload();renderDetail(recipes.find(x=>x.id===r.id))}
-  catch(err){alert('Speichern fehlgeschlagen: '+err.message)}
 };
 
 /* Lightbox */
