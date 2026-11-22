@@ -11,11 +11,12 @@
 body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
 header{position:sticky;top:0;background:var(--bg);padding:14px 16px 10px;z-index:5;border-bottom:1px solid var(--bd)}
 h1{margin:0 0 10px;font-size:22px}
-.row{display:flex;gap:8px}
+.row{display:flex;gap:8px;align-items:center}
 input,textarea{width:100%;padding:11px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--in);color:var(--tx);font:inherit;font-size:16px}
 textarea{min-height:110px;resize:vertical}
 label{display:block;margin:14px 0 5px;font-weight:600;font-size:14px}
 button{border:0;border-radius:10px;padding:11px 16px;font:inherit;font-weight:600;cursor:pointer;background:var(--ac);color:#fff}
+button:disabled{opacity:.5;cursor:default}
 button.sec{background:transparent;color:var(--tx);border:1px solid var(--bd)}
 button.del{background:#c0392b}
 main{padding:14px 16px 90px;max-width:720px;margin:auto}
@@ -43,14 +44,20 @@ a.src{display:inline-block;margin:8px 0;color:var(--ac);font-weight:600;word-bre
 .lb.on{display:flex}
 .lb img{max-width:100%;max-height:100%}
 .bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+.ai{margin-top:16px;width:100%;padding:14px;font-size:16px}
+.st{margin:8px 0 0;font-size:13px;color:var(--mu);min-height:18px}
+.st.err{color:#c0392b}
+.top{display:flex;justify-content:space-between;align-items:center}
+.top h1{margin:0}
+.gear{background:transparent;color:var(--tx);font-size:22px;padding:4px 8px}
 </style>
 </head>
 <body>
 
 <div id="v-list" class="view on">
   <header>
-    <h1>🍳 Meine Rezepte</h1>
-    <div class="row"><input id="q" type="search" placeholder="Suchen (Titel, Zutaten …)"></div>
+    <div class="top"><h1>🍳 Meine Rezepte</h1><button class="gear" id="gear" title="Einstellungen">⚙️</button></div>
+    <div class="row" style="margin-top:10px"><input id="q" type="search" placeholder="Suchen (Titel, Zutaten …)"></div>
   </header>
   <main>
     <div id="grid" class="grid"></div>
@@ -67,13 +74,15 @@ a.src{display:inline-block;margin:8px 0;color:var(--ac);font-weight:600;word-bre
 <div id="v-form" class="view">
   <header><h1 id="ftitle">Neues Rezept</h1></header>
   <main>
-    <label>Titel</label>
-    <input id="f-title" placeholder="z. B. Protein-Pasta">
     <label>Link zum Video (Facebook / Instagram)</label>
     <input id="f-link" type="url" placeholder="https://…">
     <label>Bilder / Screenshots (max. 4)</label>
     <div class="thumbs" id="thumbs"></div>
     <input id="f-file" type="file" accept="image/*" multiple hidden>
+    <button class="ai" id="ai" disabled>✨ Rezept automatisch auslesen</button>
+    <div class="st" id="aist"></div>
+    <label>Titel</label>
+    <input id="f-title" placeholder="z. B. Protein-Pasta">
     <label>Zutaten</label>
     <textarea id="f-ing" placeholder="Eine Zutat pro Zeile"></textarea>
     <label>Zubereitung</label>
@@ -96,7 +105,7 @@ a.src{display:inline-block;margin:8px 0;color:var(--ac);font-weight:600;word-bre
 
 <script>
 const $=s=>document.querySelector(s);
-const MAX_IMG=4;
+const MAX_IMG=4, HOOK_KEY='rezepte_webhook';
 let db, recipes=[], cur=null, formImgs=[];
 
 /* ---------- IndexedDB ---------- */
@@ -110,6 +119,10 @@ const tx=(m)=>db.transaction('r',m).objectStore('r');
 const getAll=()=>new Promise((res,rej)=>{const q=tx('readonly').getAll();q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)});
 const put=o=>new Promise((res,rej)=>{const q=tx('readwrite').put(o);q.onsuccess=()=>res();q.onerror=()=>rej(q.error)});
 const del=id=>new Promise((res,rej)=>{const q=tx('readwrite').delete(id);q.onsuccess=()=>res();q.onerror=()=>rej(q.error)});
+
+/* ---------- Webhook-Einstellung ---------- */
+const getHook=()=>{try{return localStorage.getItem(HOOK_KEY)||''}catch(e){return ''}};
+const setHook=v=>{try{localStorage.setItem(HOOK_KEY,v)}catch(e){}};
 
 /* ---------- Bilder verkleinern ---------- */
 function shrink(file){return new Promise((res,rej)=>{
@@ -169,7 +182,10 @@ function renderThumbs(){
   $('#thumbs').innerHTML=h;
   $('#thumbs').querySelectorAll('b').forEach(b=>b.onclick=()=>{formImgs.splice(+b.dataset.i,1);renderThumbs()});
   const a=$('#addimg');if(a)a.onclick=()=>$('#f-file').click();
+  $('#ai').disabled=!formImgs.length;
 }
+
+function setStatus(t,err){const s=$('#aist');s.textContent=t||'';s.className='st'+(err?' err':'')}
 
 function openForm(r){
   cur=r||null;
@@ -180,7 +196,32 @@ function openForm(r){
   $('#f-steps').value=r?.steps||'';
   $('#f-nutr').value=r?.nutr||'';
   formImgs=r?[...r.imgs]:[];
-  renderThumbs();show('#v-form');
+  setStatus('');renderThumbs();show('#v-form');
+}
+
+/* ---------- Automatisch auslesen ---------- */
+async function autoRead(){
+  let hook=getHook();
+  if(!hook){
+    hook=prompt('n8n-Webhook-URL eintragen (wird nur in diesem Browser gespeichert):','');
+    if(!hook)return;
+    setHook(hook.trim());hook=hook.trim();
+  }
+  const btn=$('#ai');btn.disabled=true;setStatus('Lese Rezept aus … das dauert ca. 10–30 Sekunden.');
+  try{
+    const res=await fetch(hook,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({images:formImgs,link:$('#f-link').value.trim()})});
+    if(!res.ok)throw new Error('Server antwortete mit '+res.status);
+    const d=await res.json();
+    if(d.title&&!$('#f-title').value.trim())$('#f-title').value=d.title;
+    if(Array.isArray(d.ingredients))$('#f-ing').value=d.ingredients.join('\n');
+    if(Array.isArray(d.steps))$('#f-steps').value=d.steps.map((s,i)=>(i+1)+'. '+String(s).replace(/^\d+[\.\)]\s*/,'')).join('\n');
+    if(d.nutrition)$('#f-nutr').value=d.nutrition+(d.nutrition_estimated?'\n(geschätzt)':'');
+    setStatus('Fertig. Bitte kurz prüfen und speichern.');
+  }catch(err){
+    setStatus('Fehler: '+err.message+'. Ist n8n erreichbar und die URL korrekt?',true);
+  }
+  btn.disabled=!formImgs.length;
 }
 
 /* ---------- Events ---------- */
@@ -188,6 +229,11 @@ $('#new').onclick=()=>openForm(null);
 $('#cancel').onclick=()=>show('#v-list');
 $('#back').onclick=()=>show('#v-list');
 $('#q').oninput=renderList;
+$('#ai').onclick=autoRead;
+$('#gear').onclick=()=>{
+  const v=prompt('n8n-Webhook-URL:',getHook());
+  if(v!==null)setHook(v.trim());
+};
 $('#grid').onclick=e=>{const c=e.target.closest('.card');if(c)renderDetail(recipes.find(r=>r.id===c.dataset.id))};
 
 $('#f-file').onchange=async e=>{
@@ -244,4 +290,3 @@ async function reload(){recipes=await getAll();renderList()}
 </script>
 </body>
 </html>
-
