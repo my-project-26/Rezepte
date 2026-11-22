@@ -13,6 +13,7 @@
     --muted: #a39b8b;
     --accent: #e8a33d;
     --danger: #e0645c;
+    --ok: #6fbf73;
     --radius: 16px;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -24,8 +25,12 @@
   h1 { margin: 0; font-size: 28px; }
   button { font: inherit; border: 0; border-radius: 12px; padding: 11px 16px;
     background: var(--accent); color: #1b1408; font-weight: 700; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
   button.ghost { background: var(--card2); color: var(--text); font-weight: 600; }
   button.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  #n8nBox { max-width: 900px; margin: 0 auto; padding: 4px 16px 8px; display: flex;
+    align-items: center; gap: 12px; flex-wrap: wrap; }
+  #n8nStatus { color: var(--muted); font-size: 14px; flex: 1; min-width: 160px; }
   #chips { display: flex; gap: 8px; overflow-x: auto; padding: 8px 16px 12px;
     max-width: 900px; margin: 0 auto; scrollbar-width: none; }
   #chips::-webkit-scrollbar { display: none; }
@@ -34,13 +39,17 @@
   .chip.aktiv { background: var(--accent); color: #1b1408; }
   #liste { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 12px; padding: 4px 16px 40px; max-width: 900px; margin: 0 auto; }
-  .karte { background: var(--card); border-radius: var(--radius); overflow: hidden; cursor: pointer; }
+  .karte { background: var(--card); border-radius: var(--radius); overflow: hidden; cursor: pointer; position: relative; }
   .karte .bild { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--card2); }
   .karte .leer { width: 100%; aspect-ratio: 1 / 1; display: flex; align-items: center;
     justify-content: center; font-size: 40px; background: var(--card2); }
   .karte .info { padding: 10px 12px 12px; }
   .karte .titel { font-weight: 700; font-size: 15px; line-height: 1.25; }
   .karte .kat { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .badge { position: absolute; top: 8px; left: 8px; font-size: 11px; font-weight: 700;
+    padding: 3px 8px; border-radius: 8px; background: rgba(0,0,0,.7); }
+  .badge.offen { color: var(--accent); }
+  .badge.fertig { color: var(--ok); }
   .leerhinweis { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 60px 20px; }
   .overlay { position: fixed; inset: 0; background: var(--bg); overflow-y: auto; z-index: 10;
     padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
@@ -66,9 +75,14 @@
   .fehler { color: var(--danger); min-height: 20px; margin: 12px 0 0; font-size: 14px; }
   .detail h2 { font-size: 26px; margin: 4px 0 4px; }
   .detail .kat { color: var(--muted); margin-bottom: 14px; }
-  .detail .abschnitt { margin: 18px 0 8px; font-weight: 700; color: var(--accent); font-size: 14px;
+  .detail .abschnitt { margin: 20px 0 8px; font-weight: 700; color: var(--accent); font-size: 14px;
     text-transform: uppercase; letter-spacing: .04em; }
   .detail img { width: 100%; display: block; border-radius: var(--radius); background: var(--card2); }
+  .detail ul, .detail ol { margin: 0; padding-left: 22px; line-height: 1.55; }
+  .detail li { margin-bottom: 6px; }
+  .detail .nw { color: var(--muted); line-height: 1.6; }
+  .detail .hinweis { color: var(--muted); font-size: 14px; background: var(--card); padding: 12px 14px;
+    border-radius: 12px; margin-top: 16px; }
   .linkbtn { display: inline-block; text-decoration: none; background: var(--accent); color: #1b1408;
     font-weight: 700; padding: 11px 16px; border-radius: 12px; margin: 4px 0 6px; }
   .aktionen { display: flex; gap: 10px; margin-top: 28px; }
@@ -81,6 +95,12 @@
   <h1>🍳 Rezepte</h1>
   <button id="neuBtn">+ Neu</button>
 </header>
+
+<div id="n8nBox">
+  <button class="ghost" id="n8nBtn">n8n verarbeiten</button>
+  <span id="n8nStatus"></span>
+</div>
+
 <div id="chips"></div>
 <main id="liste"></main>
 
@@ -117,6 +137,13 @@
 </div>
 
 <script>
+  /* ====== EINSTELLUNG ======
+     Production-URL aus dem n8n-Webhook-Node (Workflow muss "Active" sein).
+     Für Tests im Test-Modus: http://localhost:5678/webhook-test/rezept */
+  var N8N_URL = 'http://localhost:5678/webhook/rezept';
+  var N8N_TIMEOUT_MS = 5 * 60 * 1000;
+  /* =========================== */
+
   var DB_NAME = 'rezepte-v2';
   var STORE = 'rezepte';
   var SLOTS = ['Essen', 'Zutaten', 'Zubereitung', 'Weiteres'];
@@ -128,6 +155,7 @@
   var formBilder = [null, null, null, null];
   var aktuellerSlot = 0;
   var detailId = null;
+  var laeuft = false;
 
   function $(id) { return document.getElementById(id); }
 
@@ -142,6 +170,10 @@
     if (!u) return '';
     if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
     return /^https?:\/\//i.test(u) ? u : '';
+  }
+
+  function istOffen(r) {
+    return !r.auslesen && (r.bilder || []).some(function (b) { return b; });
   }
 
   /* ---------- Datenbank ---------- */
@@ -205,6 +237,90 @@
     });
   }
 
+  /* ---------- n8n ---------- */
+  function setStatus(t) { $('n8nStatus').textContent = t || ''; }
+
+  function aktualisiereN8nBtn() {
+    var n = rezepte.filter(istOffen).length;
+    $('n8nBtn').textContent = n ? 'n8n verarbeiten (' + n + ' offen)' : 'n8n verarbeiten';
+    $('n8nBtn').disabled = laeuft;
+  }
+
+  async function sendeAnN8n(r) {
+    var bilder = (r.bilder || []);
+    var senden = bilder.slice(1).filter(function (b) { return b; });
+    if (!senden.length) senden = bilder.filter(function (b) { return b; });
+
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, N8N_TIMEOUT_MS);
+    try {
+      var res = await fetch(N8N_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: r.id, titel: r.titel, link: r.link || '', bilder: senden }),
+        signal: ctrl.signal
+      });
+      if (!res.ok) throw new Error('n8n antwortet mit Fehler ' + res.status);
+      var data = await res.json();
+      if (Array.isArray(data)) data = data[0] || {};
+      return data;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function verarbeiten(still) {
+    if (laeuft || !db) return;
+    var offene = rezepte.filter(istOffen);
+    if (!offene.length) {
+      if (!still) setStatus('Nichts offen. Alles ist ausgelesen.');
+      return;
+    }
+    laeuft = true;
+    aktualisiereN8nBtn();
+
+    var fertig = 0;
+    var letzterFehler = '';
+
+    for (var i = 0; i < offene.length; i++) {
+      var r = offene[i];
+      setStatus('Verarbeite ' + (i + 1) + ' von ' + offene.length + ': ' + r.titel + ' … (kann etwas dauern)');
+      try {
+        var data = await sendeAnN8n(r);
+        if (data && data.ok) {
+          r.auslesen = {
+            portionen: data.portionen || '',
+            zutaten: Array.isArray(data.zutaten) ? data.zutaten : [],
+            zubereitung: Array.isArray(data.zubereitung) ? data.zubereitung : [],
+            naehrwerte: data.naehrwerte || {}
+          };
+          r.fehler = '';
+          await dbSpeichern(r);
+          fertig++;
+        } else {
+          r.fehler = (data && data.fehler) || 'Antwort konnte nicht gelesen werden';
+          await dbSpeichern(r);
+          letzterFehler = r.fehler;
+        }
+      } catch (e) {
+        letzterFehler = e.name === 'AbortError'
+          ? 'Zeitüberschreitung'
+          : 'n8n nicht erreichbar';
+        break;
+      }
+    }
+
+    laeuft = false;
+    await laden();
+
+    var rest = rezepte.filter(istOffen).length;
+    if (fertig && !rest) setStatus('Fertig: ' + fertig + ' Rezept(e) ausgelesen.');
+    else if (letzterFehler) setStatus((fertig ? fertig + ' ausgelesen. ' : '') + rest + ' noch offen. Grund: ' + letzterFehler);
+    else setStatus(rest + ' noch offen.');
+  }
+
+  $('n8nBtn').addEventListener('click', function () { verarbeiten(false); });
+
   /* ---------- Liste ---------- */
   function kategorien() {
     var set = {};
@@ -216,27 +332,29 @@
     var kats = kategorien();
     if (filter !== 'Alle' && kats.indexOf(filter) === -1) filter = 'Alle';
 
-    var chips = ['Alle'].concat(kats).map(function (k) {
+    $('chips').innerHTML = ['Alle'].concat(kats).map(function (k) {
       return '<button class="chip' + (k === filter ? ' aktiv' : '') + '" data-kat="' + esc(k) + '">' + esc(k) + '</button>';
     }).join('');
-    $('chips').innerHTML = chips;
 
     var sichtbar = rezepte.filter(function (r) { return filter === 'Alle' || (r.kat || 'Rezepte') === filter; });
 
     if (!sichtbar.length) {
       $('liste').innerHTML = '<div class="leerhinweis">Noch keine Rezepte.<br>Tippe oben auf „+ Neu“.</div>';
-      return;
+    } else {
+      $('liste').innerHTML = sichtbar.map(function (r) {
+        var bild = (r.bilder || []).find(function (b) { return b; });
+        var vorschau = bild
+          ? '<img class="bild" src="' + bild + '" alt="">'
+          : '<div class="leer">🍽️</div>';
+        var badge = r.auslesen
+          ? '<span class="badge fertig">✓ ausgelesen</span>'
+          : (istOffen(r) ? '<span class="badge offen">offen</span>' : '');
+        return '<div class="karte" data-id="' + esc(r.id) + '">' + badge + vorschau +
+          '<div class="info"><div class="titel">' + esc(r.titel) + '</div>' +
+          '<div class="kat">' + esc(r.kat || 'Rezepte') + '</div></div></div>';
+      }).join('');
     }
-
-    $('liste').innerHTML = sichtbar.map(function (r) {
-      var bild = (r.bilder || []).find(function (b) { return b; });
-      var vorschau = bild
-        ? '<img class="bild" src="' + bild + '" alt="">'
-        : '<div class="leer">🍽️</div>';
-      return '<div class="karte" data-id="' + esc(r.id) + '">' + vorschau +
-        '<div class="info"><div class="titel">' + esc(r.titel) + '</div>' +
-        '<div class="kat">' + esc(r.kat || 'Rezepte') + '</div></div></div>';
-    }).join('');
+    aktualisiereN8nBtn();
   }
 
   $('chips').addEventListener('click', function (e) {
@@ -264,11 +382,38 @@
     var link = sichererLink(r.link);
     if (link) html += '<a class="linkbtn" href="' + esc(link) + '" target="_blank" rel="noopener">▶ Video öffnen</a>';
 
-    (r.bilder || []).forEach(function (b, i) {
-      if (!b) return;
-      if (i > 0) html += '<div class="abschnitt">' + SLOTS[i] + '</div>';
-      else html += '<div style="height:8px"></div>';
-      html += '<img src="' + b + '" alt="' + SLOTS[i] + '">';
+    var bilder = r.bilder || [];
+    if (bilder[0]) html += '<div style="height:8px"></div><img src="' + bilder[0] + '" alt="Essen">';
+
+    var a = r.auslesen;
+    if (a) {
+      if (a.portionen) html += '<div class="abschnitt">Portionen</div><div>' + esc(a.portionen) + '</div>';
+      if (a.zutaten && a.zutaten.length) {
+        html += '<div class="abschnitt">Zutaten</div><ul>' +
+          a.zutaten.map(function (z) { return '<li>' + esc(z) + '</li>'; }).join('') + '</ul>';
+      }
+      if (a.zubereitung && a.zubereitung.length) {
+        html += '<div class="abschnitt">Zubereitung</div><ol>' +
+          a.zubereitung.map(function (z) { return '<li>' + esc(z) + '</li>'; }).join('') + '</ol>';
+      }
+      var nw = a.naehrwerte || {};
+      var teile = [];
+      if (nw.kcal) teile.push(esc(nw.kcal) + ' kcal');
+      if (nw.eiweiss) teile.push('Eiweiß ' + esc(nw.eiweiss));
+      if (nw.kohlenhydrate) teile.push('Kohlenhydrate ' + esc(nw.kohlenhydrate));
+      if (nw.fett) teile.push('Fett ' + esc(nw.fett));
+      if (teile.length) {
+        html += '<div class="abschnitt">Nährwerte' + (nw.bezugsgroesse ? ' (' + esc(nw.bezugsgroesse) + ')' : '') +
+          '</div><div class="nw">' + teile.join(' · ') + '</div>';
+      }
+    } else if (istOffen(r)) {
+      html += '<div class="hinweis">Noch nicht ausgelesen. Tippe auf der Startseite auf „n8n verarbeiten“.' +
+        (r.fehler ? '<br>Letzter Fehler: ' + esc(r.fehler) : '') + '</div>';
+    }
+
+    bilder.forEach(function (b, i) {
+      if (!b || i === 0) return;
+      html += '<div class="abschnitt">' + SLOTS[i] + '</div><img src="' + b + '" alt="' + SLOTS[i] + '">';
     });
 
     html += '<div class="aktionen"><button class="ghost" id="bearbeitenBtn">Bearbeiten</button>' +
@@ -358,13 +503,18 @@
     if (!titel) { $('fFehler').textContent = 'Bitte einen Titel eingeben.'; return; }
 
     var alt = editId ? rezepte.find(function (x) { return x.id === editId; }) : null;
+    var neueBilder = formBilder.slice();
+    var bilderGleich = alt && (alt.bilder || []).join('|') === neueBilder.join('|');
+
     var obj = {
       id: editId || String(Date.now()),
       titel: titel,
       kat: $('fKat').value.trim() || 'Rezepte',
       link: $('fLink').value.trim(),
-      bilder: formBilder.slice(),
-      erstellt: alt ? alt.erstellt : Date.now()
+      bilder: neueBilder,
+      erstellt: alt ? alt.erstellt : Date.now(),
+      auslesen: (alt && bilderGleich) ? (alt.auslesen || null) : null,
+      fehler: ''
     };
 
     try {
@@ -381,6 +531,10 @@
     try {
       db = await openDB();
       await laden();
+      if (rezepte.some(istOffen)) {
+        setStatus(rezepte.filter(istOffen).length + ' offen. Prüfe n8n …');
+        verarbeiten(true);
+      }
     } catch (err) {
       $('liste').innerHTML = '<div class="leerhinweis">Der Speicher im Browser ist nicht verfügbar.<br>Öffne die Seite nicht im privaten Modus.</div>';
     }
