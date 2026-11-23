@@ -1,257 +1,994 @@
-{
-  "name": "Rezepte aus Drive verarbeiten",
-  "nodes": [
-    {
-      "parameters": {
-        "httpMethod": "GET",
-        "path": "rezepte-verarbeiten",
-        "responseMode": "onReceived",
-        "options": {}
-      },
-      "id": "20000000-0000-4000-8000-000000000001",
-      "name": "Kurzbefehl (Webhook)",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [0, 200],
-      "webhookId": "20000000-0000-4000-8000-0000000000aa"
-    },
-    {
-      "parameters": {},
-      "id": "20000000-0000-4000-8000-000000000002",
-      "name": "Manuell starten",
-      "type": "n8n-nodes-base.manualTrigger",
-      "typeVersion": 1,
-      "position": [0, 400]
-    },
-    {
-      "parameters": {
-        "jsCode": "const ordnerId = 'HIER_ORDNER_ID_EINTRAGEN'; const chatId = 'HIER_TELEGRAM_CHAT_ID'; const ap = String.fromCharCode(39); const q = ap + ordnerId + ap + ' in parents and trashed = false and properties has { key=' + ap + 'status' + ap + ' and value=' + ap + 'offen' + ap + ' }'; return [{ json: { ordnerId: ordnerId, chatId: chatId, q: q } }];"
-      },
-      "id": "20000000-0000-4000-8000-000000000003",
-      "name": "Einstellungen",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [240, 300]
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "https://www.googleapis.com/drive/v3/files",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleDriveOAuth2Api",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            { "name": "q", "value": "={{ $('Einstellungen').first().json.q }}" },
-            { "name": "fields", "value": "files(id,name)" },
-            { "name": "pageSize", "value": "100" }
-          ]
-        },
-        "options": {}
-      },
-      "id": "20000000-0000-4000-8000-000000000004",
-      "name": "Drive Liste offen",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [480, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const dateien = ($input.first().json.files) || []; return dateien.map(function (f) { return { json: { id: f.id, name: f.name } }; });"
-      },
-      "id": "20000000-0000-4000-8000-000000000005",
-      "name": "Dateien aufteilen",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [720, 300],
-      "alwaysOutputData": true
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
-          "conditions": [
-            { "id": "c1", "leftValue": "={{ $json.id }}", "rightValue": "", "operator": { "type": "string", "operation": "notEmpty", "singleValue": true } }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "20000000-0000-4000-8000-000000000006",
-      "name": "Rezepte vorhanden?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [960, 300]
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "=https://www.googleapis.com/drive/v3/files/{{ $json.id }}?alt=media",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleDriveOAuth2Api",
-        "options": { "response": { "response": { "responseFormat": "json" } } }
-      },
-      "id": "20000000-0000-4000-8000-000000000007",
-      "name": "Rezept laden",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1200, 220]
-    },
-    {
-      "parameters": {
-        "jsCode": "return $input.all().map(function (it) { const rez = it.json || {}; const bilder = Array.isArray(rez.bilder) ? rez.bilder : []; let nutz = bilder.slice(1).filter(Boolean); if (!nutz.length) nutz = bilder.filter(Boolean); const images = nutz.map(function (d) { const s = String(d); return s.includes('base64,') ? s.split('base64,')[1] : s; }); const prompt = 'Du bekommst Screenshots eines Rezepts. Lies Titel, Portionen, Zutaten (mit Mengen) und Zubereitung aus den Bildern aus. Antworte NUR mit gueltigem JSON in genau diesem Format: {\"titel\":\"\",\"portionen\":\"\",\"ergibt\":\"\",\"zutaten\":[\"450 g Haehnchenbrust\"],\"zubereitung\":[\"Schritt 1\"]} Bei portionen nur etwas eintragen, wenn ausdruecklich Portionen oder Personen genannt sind (z. B. 2 Portionen). Stueckzahlen wie 14 Nuggets gehoeren in ergibt. Naehrwerte ignorierst du. Erfinde nichts. Was nicht im Bild steht, bleibt leer. Antworte auf Deutsch. Vorgeschlagener Titel: ' + (rez.titel || '') + '. Quelle: ' + (rez.link || ''); return { json: { model: 'gemma3:4b', stream: false, format: 'json', options: { temperature: 0.1 }, messages: [{ role: 'user', content: prompt, images: images }] } }; });"
-      },
-      "id": "20000000-0000-4000-8000-000000000008",
-      "name": "Anfrage bauen",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1440, 220]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "http://host.docker.internal:11434/api/chat",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json) }}",
-        "options": { "timeout": 300000 }
-      },
-      "id": "20000000-0000-4000-8000-000000000009",
-      "name": "Rezept lesen",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1680, 220],
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "return $input.all().map(function (it) { const res = it.json || {}; const text = (res.message && res.message.content) || ''; let data = null; try { data = JSON.parse(text.replace(/```json|```/g, '').trim()); } catch (e) { data = null; } const zutaten = (data && Array.isArray(data.zutaten)) ? data.zutaten.map(function (z) { return String(z); }).filter(Boolean) : []; const prompt = 'Schaetze fuer jede Zutat die Naehrwerte der angegebenen Menge. Nutze typische Werte (z. B. Haehnchenbrust roh ca. 110 kcal und 23 g Eiweiss pro 100 g). Rechne Stueckangaben in Gramm um (1 Ei ca. 55 g). Gewuerze ohne Mengenangabe zaehlen als 0. Antworte NUR mit JSON in genau diesem Format: {\"zutaten\":[{\"zutat\":\"\",\"gramm\":0,\"kcal\":0,\"eiweiss\":0,\"kohlenhydrate\":0,\"fett\":0}]} Eine Zeile pro Zutat, in derselben Reihenfolge. Zutaten: ' + JSON.stringify(zutaten); return { json: { model: 'gemma3:4b', stream: false, format: 'json', options: { temperature: 0 }, messages: [{ role: 'user', content: prompt }] } }; });"
-      },
-      "id": "20000000-0000-4000-8000-000000000010",
-      "name": "Zutaten pruefen",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1920, 220]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "http://host.docker.internal:11434/api/chat",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json) }}",
-        "options": { "timeout": 300000 }
-      },
-      "id": "20000000-0000-4000-8000-000000000011",
-      "name": "Naehrwerte rechnen",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [2160, 220],
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "const lad = $('Rezept laden').all(); const dat = $('Dateien aufteilen').all(); const les = $('Rezept lesen').all(); const out = []; $input.all().forEach(function (it, i) { const rez = (lad[i] && lad[i].json) || {}; const fileId = dat[i] && dat[i].json.id; let l = null; try { l = JSON.parse(((((les[i] || {}).json || {}).message || {}).content || '').replace(/```json|```/g, '').trim()); } catch (e) { l = null; } let nw = null; try { nw = JSON.parse((((it.json || {}).message || {}).content || '').replace(/```json|```/g, '').trim()); } catch (e) { nw = null; } const zeilen = (nw && Array.isArray(nw.zutaten)) ? nw.zutaten : []; const sum = { kcal: 0, eiweiss: 0, kohlenhydrate: 0, fett: 0 }; zeilen.forEach(function (z) { Object.keys(sum).forEach(function (k) { const v = parseFloat(z[k]); if (!isNaN(v)) sum[k] += v; }); }); const pText = String((l && l.portionen) || ''); const echt = /portion|person|serving/i.test(pText); const pn = parseInt(pText.replace(/[^0-9]/g, ''), 10); const teiler = (echt && pn > 0) ? pn : 1; const rund = function (v) { return Math.round(v / teiler); }; if (l) { rez.auslesen = { portionen: pText, ergibt: String(l.ergibt || ''), zutaten: Array.isArray(l.zutaten) ? l.zutaten : [], zubereitung: Array.isArray(l.zubereitung) ? l.zubereitung : [], naehrwerte: zeilen.length ? { kcal: String(rund(sum.kcal)), eiweiss: rund(sum.eiweiss) + ' g', kohlenhydrate: rund(sum.kohlenhydrate) + ' g', fett: rund(sum.fett) + ' g', bezugsgroesse: teiler > 1 ? 'pro Portion, ' + teiler + ' Portionen' : 'ganze Portion, alle Zutaten zusammen' } : {} }; rez.fehler = ''; if (!rez.titel && l.titel) rez.titel = l.titel; } else { rez.fehler = 'Rezept konnte nicht gelesen werden'; } out.push({ json: { fileId: fileId, titel: rez.titel || '', ok: !!rez.auslesen, status: rez.auslesen ? 'fertig' : 'offen', rezept: rez } }); }); return out;"
-      },
-      "id": "20000000-0000-4000-8000-000000000012",
-      "name": "Ergebnis zusammenbauen",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [2400, 220]
-    },
-    {
-      "parameters": {
-        "method": "PATCH",
-        "url": "=https://www.googleapis.com/upload/drive/v3/files/{{ $json.fileId }}?uploadType=media",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleDriveOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.rezept) }}",
-        "options": {}
-      },
-      "id": "20000000-0000-4000-8000-000000000013",
-      "name": "Rezept speichern",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [2640, 220]
-    },
-    {
-      "parameters": {
-        "method": "PATCH",
-        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Ergebnis zusammenbauen').all()[$itemIndex].json.fileId }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleDriveOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ properties: { status: $('Ergebnis zusammenbauen').all()[$itemIndex].json.status } }) }}",
-        "options": {}
-      },
-      "id": "20000000-0000-4000-8000-000000000014",
-      "name": "Status setzen",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [2880, 220]
-    },
-    {
-      "parameters": {
-        "jsCode": "const erg = $('Ergebnis zusammenbauen').all(); const ok = erg.filter(function (e) { return e.json.ok; }).length; const bad = erg.length - ok; const namen = erg.map(function (e) { return (e.json.ok ? '✅ ' : '⚠️ ') + (e.json.titel || 'Rezept'); }).join('\\n'); const text = 'Rezepte verarbeitet: ' + ok + ' fertig' + (bad ? ', ' + bad + ' mit Fehler' : '') + '\\n' + namen; return [{ json: { text: text, chatId: $('Einstellungen').first().json.chatId } }];"
-      },
-      "id": "20000000-0000-4000-8000-000000000015",
-      "name": "Zusammenfassung",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [3120, 220]
-    },
-    {
-      "parameters": {
-        "chatId": "={{ $json.chatId }}",
-        "text": "={{ $json.text }}",
-        "additionalFields": {}
-      },
-      "id": "20000000-0000-4000-8000-000000000016",
-      "name": "Telegram fertig",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [3360, 220],
-      "disabled": true
-    },
-    {
-      "parameters": {
-        "chatId": "={{ $('Einstellungen').first().json.chatId }}",
-        "text": "Nichts zu verarbeiten. Alle Rezepte sind ausgelesen.",
-        "additionalFields": {}
-      },
-      "id": "20000000-0000-4000-8000-000000000017",
-      "name": "Telegram nichts offen",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [1200, 420],
-      "disabled": true
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rezepte</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root {
+    --bg: #161412;
+    --card: #232019;
+    --card2: #2d2a22;
+    --text: #f2ede4;
+    --muted: #a39b8b;
+    --accent: #e8a33d;
+    --danger: #e0645c;
+    --ok: #6fbf73;
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); min-height: 100vh; }
+  header { display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 16px 8px; max-width: 900px; margin: 0 auto; }
+  .kopf { display: flex; gap: 8px; }
+  h1 { margin: 0; font-size: 28px; }
+  button { font: inherit; border: 0; border-radius: 12px; padding: 11px 16px;
+    background: var(--accent); color: #1b1408; font-weight: 700; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: var(--card2); color: var(--text); font-weight: 600; }
+  button.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  #n8nBox { max-width: 900px; margin: 0 auto; padding: 4px 16px 8px; display: flex;
+    align-items: center; gap: 10px; flex-wrap: wrap; }
+  #n8nStatus { color: var(--muted); font-size: 14px; flex: 1 1 100%; }
+  #chips { display: flex; gap: 8px; overflow-x: auto; padding: 8px 16px 12px;
+    max-width: 900px; margin: 0 auto; scrollbar-width: none; }
+  #chips::-webkit-scrollbar { display: none; }
+  .chip { flex: 0 0 auto; background: var(--card); color: var(--muted); border-radius: 999px;
+    padding: 8px 14px; font-weight: 600; font-size: 14px; }
+  .chip.aktiv { background: var(--accent); color: #1b1408; }
+  #liste { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px; padding: 4px 16px 40px; max-width: 900px; margin: 0 auto; }
+  .karte { background: var(--card); border-radius: var(--radius); overflow: hidden; cursor: pointer; position: relative; }
+  .karte.gewaehlt { outline: 3px solid var(--accent); }
+  .karte .bild { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--card2); }
+  .karte .leer { width: 100%; aspect-ratio: 1 / 1; display: flex; align-items: center;
+    justify-content: center; font-size: 40px; background: var(--card2); }
+  .karte .info { padding: 10px 12px 12px; }
+  .karte .titel { font-weight: 700; font-size: 15px; line-height: 1.25; }
+  .karte .kat { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .haken { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(0,0,0,.7); border: 2px solid #fff; display: flex; align-items: center;
+    justify-content: center; font-weight: 700; color: #1b1408; }
+  .gewaehlt .haken { background: var(--accent); border-color: var(--accent); }
+  .badge { position: absolute; top: 8px; left: 8px; font-size: 11px; font-weight: 700;
+    padding: 3px 8px; border-radius: 8px; background: rgba(0,0,0,.7); }
+  .badge.offen { color: var(--accent); }
+  .badge.lokal { color: var(--danger); }
+  .badge.fertig { color: var(--ok); }
+  .leerhinweis { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 60px 20px; }
+  .overlay { position: fixed; inset: 0; background: var(--bg); overflow-y: auto; z-index: 10;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  .hidden { display: none !important; }
+  .sheet { max-width: 700px; margin: 0 auto; padding: 14px 16px 60px; }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+  .bar h2 { margin: 0; font-size: 18px; text-align: center; flex: 1; }
+  label { display: block; margin: 16px 0 6px; font-weight: 700; font-size: 14px; }
+  input[type="text"], input[type="url"] { width: 100%; font: inherit; color: var(--text);
+    background: var(--card); border: 1px solid #3a362c; border-radius: 12px; padding: 13px 14px; }
+  input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .slots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .slot { position: relative; aspect-ratio: 1 / 1; background: var(--card); border: 2px dashed #4a4538;
+    border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; color: var(--muted); cursor: pointer; text-align: center; }
+  .slot .plus { font-size: 34px; line-height: 1; color: var(--accent); }
+  .slot .name { font-size: 13px; font-weight: 600; margin-top: 6px; }
+  .slot img { width: 100%; height: 100%; object-fit: cover; }
+  .slot .tag { position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,.65);
+    color: #fff; font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 8px; }
+  .slot .weg { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; padding: 0;
+    border-radius: 50%; background: rgba(0,0,0,.7); color: #fff; font-size: 16px; line-height: 30px; }
+  .fehler { color: var(--danger); min-height: 20px; margin: 12px 0 0; font-size: 14px; }
+  .detail h2 { font-size: 26px; margin: 4px 0 4px; }
+  .detail .kat { color: var(--muted); margin-bottom: 14px; }
+  .detail .abschnitt { margin: 20px 0 8px; font-weight: 700; color: var(--accent); font-size: 14px;
+    text-transform: uppercase; letter-spacing: .04em; }
+  .detail img { width: 100%; display: block; border-radius: var(--radius); background: var(--card2); }
+  .detail ul, .detail ol { margin: 0; padding-left: 22px; line-height: 1.55; }
+  .detail li { margin-bottom: 6px; }
+  .detail .nw { color: var(--muted); line-height: 1.6; }
+  .hinweisbox { color: var(--muted); font-size: 14px; background: var(--card); padding: 12px 14px;
+    border-radius: 12px; margin-top: 8px; line-height: 1.5; }
+  .linkbtn { display: inline-block; text-decoration: none; background: var(--accent); color: #1b1408;
+    font-weight: 700; padding: 11px 16px; border-radius: 12px; margin: 4px 0 6px; }
+  .aktionen { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  .aktionen button { flex: 1; }
+  .gruppe { margin: 22px 0 8px; font-weight: 700; color: var(--accent); font-size: 14px;
+    text-transform: uppercase; letter-spacing: .04em; }
+  .pos { display: flex; gap: 12px; align-items: center; padding: 12px; background: var(--card);
+    border-radius: 12px; margin-bottom: 8px; }
+  .pos input[type="checkbox"] { width: 22px; height: 22px; flex: 0 0 auto; accent-color: var(--accent); }
+  .pos span { flex: 1; line-height: 1.35; }
+  .pos.erledigt span { text-decoration: line-through; color: var(--muted); }
+  .neuPos { display: flex; gap: 8px; margin-top: 8px; }
+  .neuPos input { flex: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🍳 Rezepte</h1>
+  <div class="kopf">
+    <button class="ghost" id="einkaufBtn" title="Einkaufsliste">🛒</button>
+    <button class="ghost" id="settingsBtn" title="Einstellungen">⚙️</button>
+    <button id="neuBtn">+ Neu</button>
+  </div>
+</header>
+
+<div id="n8nBox">
+  <button id="loginBtn" class="hidden">Mit Google anmelden</button>
+  <button class="ghost" id="syncBtn">↻ Synchronisieren</button>
+  <button class="ghost" id="auswahlBtn">Auswählen</button>
+  <button class="danger hidden" id="loeschenBtn">Löschen (0)</button>
+  <span id="n8nStatus"></span>
+</div>
+
+<div id="chips"></div>
+<main id="liste"></main>
+
+<!-- Formular -->
+<div id="formView" class="overlay hidden">
+  <div class="sheet">
+    <div class="bar">
+      <button class="ghost" id="formZu">Abbrechen</button>
+      <h2 id="formTitel">Neues Rezept</h2>
+      <button id="speichernBtn">Speichern</button>
+    </div>
+
+    <label for="fTitel">Titel</label>
+    <input type="text" id="fTitel" placeholder="z. B. Protein-Nuggets" autocomplete="off">
+
+    <label for="fKat">Kategorie</label>
+    <input type="text" id="fKat" list="katListe" placeholder="Rezepte" autocomplete="off">
+    <datalist id="katListe"></datalist>
+
+    <label for="fLink">Link zum Video</label>
+    <input type="url" id="fLink" placeholder="https://www.instagram.com/reel/..." autocomplete="off">
+
+    <label>Bilder</label>
+    <div class="slots" id="slots"></div>
+    <input type="file" id="fileInput" accept="image/*" class="hidden">
+
+    <p class="fehler" id="fFehler"></p>
+  </div>
+</div>
+
+<!-- Detail -->
+<div id="detailView" class="overlay hidden">
+  <div class="sheet detail" id="detailInhalt"></div>
+</div>
+
+<!-- Einkaufsliste -->
+<div id="einkaufView" class="overlay hidden">
+  <div class="sheet">
+    <div class="bar">
+      <button class="ghost" id="einkaufZu">← Zurück</button>
+      <h2>🛒 Einkaufsliste</h2>
+      <span style="width:80px"></span>
+    </div>
+    <div class="neuPos">
+      <input type="text" id="neuPosText" placeholder="Artikel hinzufügen" autocomplete="off">
+      <button id="neuPosBtn">+</button>
+    </div>
+    <div id="einkaufInhalt"></div>
+    <div class="aktionen">
+      <button class="ghost" id="erledigteWeg">Erledigte entfernen</button>
+      <button class="danger" id="alleWeg">Alles leeren</button>
+    </div>
+  </div>
+</div>
+
+<!-- Einstellungen -->
+<div id="settingsView" class="overlay hidden">
+  <div class="sheet">
+    <div class="bar">
+      <button class="ghost" id="settingsZu">← Zurück</button>
+      <h2>Einstellungen</h2>
+      <span style="width:80px"></span>
+    </div>
+    <label>Drive-Ordner „Rezepte“: Ordner-ID für n8n</label>
+    <input type="text" id="sOrdner" readonly>
+    <div class="aktionen">
+      <button class="ghost" id="sKopieren">ID kopieren</button>
+      <button class="ghost" id="sOrdnerNeu">Ordner neu suchen</button>
+    </div>
+    <label>Google-Konto</label>
+    <div class="hinweisbox" id="sKonto"></div>
+    <div class="aktionen">
+      <button class="danger" id="sAbmelden">Abmelden</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ====== EINSTELLUNGEN ====== */
+  // Client-ID aus der Google Cloud Console (siehe Einrichtung)
+  var GOOGLE_CLIENT_ID = 'HIER_CLIENT_ID_EINTRAGEN';
+  var SCOPE = 'https://www.googleapis.com/auth/drive';
+  var ORDNER_NAME = 'Rezepte';
+
+  // Bildgröße: kleinere Zahlen = kleinere Dateien.
+  var FOTO_MAX = 600;    // Längste Seite beim Essensfoto (Pixel)
+  var FOTO_Q = 0.6;      // JPEG-Qualität Foto (0 bis 1)
+  var TEXT_MAX = 900;    // Längste Seite bei Text-Screenshots (Pixel)
+  var TEXT_Q = 0.55;     // JPEG-Qualität Text-Screenshots
+  /* =========================== */
+
+  var DB_NAME = 'rezepte-v2';
+  var STORE = 'rezepte';
+  var SLOTS = ['Essen', 'Zutaten', 'Zubereitung', 'Weiteres'];
+
+  var db = null;
+  var rezepte = [];
+  var filter = 'Alle';
+  var editId = null;
+  var formBilder = [null, null, null, null];
+  var aktuellerSlot = 0;
+  var detailId = null;
+  var laeuft = false;
+  var nochmal = false;
+  var zuletztSync = 0;
+  var auswahlModus = false;
+  var auswahl = {};
+
+  var accessToken = '';
+  var tokenExpires = 0;
+  var tokenClient = null;
+
+  var einkauf = { items: [] };
+  var einkaufId = localStorage.getItem('einkaufId') || '';
+  var einkaufTimer = null;
+  try {
+    var ec = JSON.parse(localStorage.getItem('einkaufCache') || 'null');
+    if (ec && Array.isArray(ec.items)) einkauf = ec;
+  } catch (e) { /* leer */ }
+
+  function $(id) { return document.getElementById(id); }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function sichererLink(u) {
+    u = (u || '').trim();
+    if (!u) return '';
+    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+    return /^https?:\/\//i.test(u) ? u : '';
+  }
+
+  function hatBild(r) { return (r.bilder || []).some(function (b) { return b; }); }
+  function istOffen(r) { return !r.auslesen && hatBild(r); }
+  function istLokal(r) { return !r.driveId || !!r.geaendert; }
+  function statusVon(r) { return istOffen(r) ? 'offen' : 'fertig'; }
+  function setStatus(t) { $('n8nStatus').textContent = t || ''; }
+  function sortieren() { rezepte.sort(function (a, b) { return (b.erstellt || 0) - (a.erstellt || 0); }); }
+
+  function fuerDrive(r) {
+    return { id: r.id, titel: r.titel, kat: r.kat, link: r.link, bilder: r.bilder,
+      erstellt: r.erstellt, auslesen: r.auslesen || null, fehler: r.fehler || '' };
+  }
+
+  /* ---------- Lokaler Speicher (Kopie) ---------- */
+  function openDB() {
+    return new Promise(function (res, rej) {
+      var r = indexedDB.open(DB_NAME, 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore(STORE, { keyPath: 'id' }); };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error); };
+    });
+  }
+  function store(mode) { return db.transaction(STORE, mode).objectStore(STORE); }
+  function dbAlle() {
+    return new Promise(function (res, rej) {
+      var r = store('readonly').getAll();
+      r.onsuccess = function () { res(r.result || []); };
+      r.onerror = function () { rej(r.error); };
+    });
+  }
+  function dbPut(obj) {
+    return new Promise(function (res, rej) {
+      var r = store('readwrite').put(obj);
+      r.onsuccess = function () { res(); };
+      r.onerror = function () { rej(r.error); };
+    });
+  }
+  function dbLoeschen(id) {
+    return new Promise(function (res, rej) {
+      var r = store('readwrite').delete(id);
+      r.onsuccess = function () { res(); };
+      r.onerror = function () { rej(r.error); };
+    });
+  }
+  function ersetzeLokal(obj) {
+    var i = rezepte.findIndex(function (x) { return x.id === obj.id; });
+    if (i >= 0) rezepte[i] = obj; else rezepte.push(obj);
+    sortieren();
+  }
+
+  /* ---------- Bilder verkleinern ---------- */
+  function neuKodieren(src, max, q, nurWennKleiner) {
+    return new Promise(function (res, rej) {
+      var img = new Image();
+      img.onload = function () {
+        var s = Math.min(1, max / Math.max(img.width, img.height));
+        var w = Math.max(1, Math.round(img.width * s));
+        var h = Math.max(1, Math.round(img.height * s));
+        var c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        var ctx = c.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        var out = c.toDataURL('image/jpeg', q);
+        res(nurWennKleiner && out.length >= src.length ? src : out);
+      };
+      img.onerror = function () {
+        if (nurWennKleiner) res(src);
+        else rej(new Error('Bild konnte nicht gelesen werden.'));
+      };
+      img.src = src;
+    });
+  }
+
+  async function bildAusDatei(file, slot) {
+    var url = URL.createObjectURL(file);
+    try {
+      return await neuKodieren(url, slot === 0 ? FOTO_MAX : TEXT_MAX, slot === 0 ? FOTO_Q : TEXT_Q, false);
+    } finally {
+      URL.revokeObjectURL(url);
     }
-  ],
-  "connections": {
-    "Kurzbefehl (Webhook)": { "main": [[{ "node": "Einstellungen", "type": "main", "index": 0 }]] },
-    "Manuell starten": { "main": [[{ "node": "Einstellungen", "type": "main", "index": 0 }]] },
-    "Einstellungen": { "main": [[{ "node": "Drive Liste offen", "type": "main", "index": 0 }]] },
-    "Drive Liste offen": { "main": [[{ "node": "Dateien aufteilen", "type": "main", "index": 0 }]] },
-    "Dateien aufteilen": { "main": [[{ "node": "Rezepte vorhanden?", "type": "main", "index": 0 }]] },
-    "Rezepte vorhanden?": {
-      "main": [
-        [{ "node": "Rezept laden", "type": "main", "index": 0 }],
-        [{ "node": "Telegram nichts offen", "type": "main", "index": 0 }]
-      ]
-    },
-    "Rezept laden": { "main": [[{ "node": "Anfrage bauen", "type": "main", "index": 0 }]] },
-    "Anfrage bauen": { "main": [[{ "node": "Rezept lesen", "type": "main", "index": 0 }]] },
-    "Rezept lesen": { "main": [[{ "node": "Zutaten pruefen", "type": "main", "index": 0 }]] },
-    "Zutaten pruefen": { "main": [[{ "node": "Naehrwerte rechnen", "type": "main", "index": 0 }]] },
-    "Naehrwerte rechnen": { "main": [[{ "node": "Ergebnis zusammenbauen", "type": "main", "index": 0 }]] },
-    "Ergebnis zusammenbauen": { "main": [[{ "node": "Rezept speichern", "type": "main", "index": 0 }]] },
-    "Rezept speichern": { "main": [[{ "node": "Status setzen", "type": "main", "index": 0 }]] },
-    "Status setzen": { "main": [[{ "node": "Zusammenfassung", "type": "main", "index": 0 }]] },
-    "Zusammenfassung": { "main": [[{ "node": "Telegram fertig", "type": "main", "index": 0 }]] }
-  },
-  "pinData": {},
-  "settings": { "executionOrder": "v1" }
-}
+  }
+
+  async function rezeptBilderVerkleinern(r) {
+    var bilder = r.bilder || [];
+    for (var j = 0; j < bilder.length; j++) {
+      var b = bilder[j];
+      if (b && b.length > 200000) {
+        bilder[j] = await neuKodieren(b, j === 0 ? FOTO_MAX : TEXT_MAX, j === 0 ? FOTO_Q : TEXT_Q, true);
+      }
+    }
+    r.bilder = bilder;
+  }
+
+  /* ---------- Google-Anmeldung ---------- */
+  function tokenGueltig() { return !!accessToken && Date.now() < tokenExpires - 60000; }
+
+  function tokenAusSpeicher() {
+    try {
+      var t = JSON.parse(localStorage.getItem('gtoken') || 'null');
+      if (t && t.token && t.exp > Date.now() + 60000) { accessToken = t.token; tokenExpires = t.exp; }
+    } catch (e) { /* kein Token */ }
+  }
+
+  function initGoogle() {
+    if (!window.google || !google.accounts || !google.accounts.oauth2) { setTimeout(initGoogle, 300); return; }
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: SCOPE,
+      callback: function (resp) {
+        if (resp && resp.access_token) {
+          accessToken = resp.access_token;
+          tokenExpires = Date.now() + (resp.expires_in || 3600) * 1000;
+          localStorage.setItem('gtoken', JSON.stringify({ token: accessToken, exp: tokenExpires }));
+          aktualisiereButtons();
+          sync(false);
+        } else {
+          setStatus('Anmeldung nicht abgeschlossen.');
+        }
+      }
+    });
+  }
+
+  function anmelden() {
+    if (GOOGLE_CLIENT_ID.indexOf('HIER_') === 0) { setStatus('Bitte zuerst die Client-ID im Code eintragen.'); return; }
+    if (!tokenClient) { setStatus('Google-Anmeldung lädt noch, bitte gleich nochmal tippen.'); return; }
+    tokenClient.requestAccessToken({ prompt: '' });
+  }
+
+  /* ---------- Google Drive ---------- */
+  async function drive(pfad, opts) {
+    if (!tokenGueltig()) throw new Error('NICHT_ANGEMELDET');
+    opts = opts || {};
+    opts.headers = Object.assign({ Authorization: 'Bearer ' + accessToken }, opts.headers || {});
+    var res = await fetch('https://www.googleapis.com' + pfad, opts);
+    if (res.status === 401) {
+      accessToken = '';
+      localStorage.removeItem('gtoken');
+      throw new Error('NICHT_ANGEMELDET');
+    }
+    if (!res.ok) {
+      var t = '';
+      try { t = await res.text(); } catch (e) { /* egal */ }
+      throw new Error('Drive-Fehler ' + res.status + (t ? ': ' + t.slice(0, 120) : ''));
+    }
+    return res;
+  }
+
+  async function ordnerId() {
+    var id = localStorage.getItem('ordnerId');
+    if (id) return id;
+    var q = "name='" + ORDNER_NAME + "' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false";
+    var r = await (await drive('/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id,name)')).json();
+    if (r.files && r.files.length) {
+      id = r.files[0].id;
+    } else {
+      var c = await (await drive('/drive/v3/files?fields=id', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: ORDNER_NAME, mimeType: 'application/vnd.google-apps.folder' })
+      })).json();
+      id = c.id;
+    }
+    localStorage.setItem('ordnerId', id);
+    return id;
+  }
+
+  function multipart(metadata, content) {
+    var b = 'rezb' + Date.now();
+    var body = '--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(metadata) +
+      '\r\n--' + b + '\r\nContent-Type: application/json\r\n\r\n' + content + '\r\n--' + b + '--';
+    return { body: body, type: 'multipart/related; boundary=' + b };
+  }
+
+  async function dateiSchreiben(name, objekt, driveId, status, ordner) {
+    var meta = { name: name, mimeType: 'application/json' };
+    if (status) meta.properties = { status: status };
+    if (!driveId) meta.parents = [ordner];
+    var mp = multipart(meta, JSON.stringify(objekt));
+    var url = '/upload/drive/v3/files' + (driveId ? '/' + driveId : '') + '?uploadType=multipart&fields=id,modifiedTime';
+    var res = await drive(url, {
+      method: driveId ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': mp.type },
+      body: mp.body
+    });
+    return res.json();
+  }
+
+  async function alleDateien(ordner) {
+    var out = [];
+    var token = '';
+    do {
+      var q = "'" + ordner + "' in parents and trashed=false";
+      var url = '/drive/v3/files?q=' + encodeURIComponent(q) +
+        '&fields=nextPageToken,files(id,name,modifiedTime)&pageSize=200' +
+        (token ? '&pageToken=' + encodeURIComponent(token) : '');
+      var j = await (await drive(url)).json();
+      out = out.concat(j.files || []);
+      token = j.nextPageToken || '';
+    } while (token);
+    return out;
+  }
+
+  /* ---------- Synchronisieren ---------- */
+  async function sync(still) {
+    if (!db) return;
+    if (laeuft) { nochmal = true; return; }
+    if (!tokenGueltig()) {
+      aktualisiereButtons();
+      if (!still) setStatus('Bitte mit Google anmelden.');
+      return;
+    }
+    laeuft = true;
+    aktualisiereButtons();
+    try {
+      setStatus('Verbinde mit Google Drive …');
+      var ordner = await ordnerId();
+
+      // 1) Neues und Geändertes hochladen
+      var hoch = rezepte.filter(istLokal);
+      for (var i = 0; i < hoch.length; i++) {
+        var r = hoch[i];
+        setStatus('Lade hoch ' + (i + 1) + ' von ' + hoch.length + ': ' + r.titel + ' …');
+        await rezeptBilderVerkleinern(r);
+        var d = await dateiSchreiben('rezept_' + r.id + '.json', fuerDrive(r), r.driveId || null, statusVon(r), ordner);
+        r.driveId = d.id;
+        r.driveModified = d.modifiedTime;
+        r.geaendert = false;
+        await dbPut(r);
+      }
+
+      // 2) Liste aus Drive
+      var liste = (await alleDateien(ordner)).filter(function (f) { return /^rezept_[0-9]+\.json$/.test(f.name); });
+      var nachDrive = {};
+      rezepte.forEach(function (r) { if (r.driveId) nachDrive[r.driveId] = r; });
+      var serverIds = {};
+      var zuLaden = [];
+      liste.forEach(function (f) {
+        serverIds[f.id] = true;
+        var lok = nachDrive[f.id];
+        if (!lok || lok.driveModified !== f.modifiedTime) zuLaden.push(f);
+      });
+
+      // 3) Neue oder geänderte Rezepte laden
+      for (var k = 0; k < zuLaden.length; k += 3) {
+        var teil = zuLaden.slice(k, k + 3);
+        setStatus('Lade Rezepte ' + Math.min(k + 3, zuLaden.length) + ' von ' + zuLaden.length + ' …');
+        await Promise.all(teil.map(async function (f) {
+          var res = await drive('/drive/v3/files/' + f.id + '?alt=media');
+          var rez = await res.json();
+          if (!rez || !rez.id) return;
+          rez.driveId = f.id;
+          rez.driveModified = f.modifiedTime;
+          rez.geaendert = false;
+          await dbPut(rez);
+          ersetzeLokal(rez);
+        }));
+      }
+
+      // 4) Was in Drive nicht mehr existiert, lokal entfernen
+      var weg = rezepte.filter(function (r) { return r.driveId && !serverIds[r.driveId]; });
+      for (var w = 0; w < weg.length; w++) {
+        await dbLoeschen(weg[w].id);
+        rezepte = rezepte.filter(function (x) { return x.id !== weg[w].id; });
+      }
+
+      sortieren();
+      zuletztSync = Date.now();
+      var offen = rezepte.filter(istOffen).length;
+      setStatus('Synchronisiert. ' + (offen ? offen + ' Rezept(e) warten auf n8n.' : 'Alles ausgelesen.'));
+    } catch (e) {
+      if (e && e.message === 'NICHT_ANGEMELDET') setStatus('Anmeldung abgelaufen. Bitte neu anmelden.');
+      else setStatus('Fehler: ' + ((e && e.message) || e));
+    } finally {
+      laeuft = false;
+      render();
+      if (nochmal) { nochmal = false; setTimeout(function () { sync(true); }, 300); }
+    }
+  }
+
+  async function loescheRezepte(liste) {
+    if (!tokenGueltig()) { alert('Zum Löschen bitte zuerst mit Google anmelden.'); return false; }
+    laeuft = true;
+    aktualisiereButtons();
+    try {
+      for (var i = 0; i < liste.length; i++) {
+        var r = liste[i];
+        setStatus('Lösche ' + (i + 1) + ' von ' + liste.length + ' …');
+        if (r.driveId) {
+          await drive('/drive/v3/files/' + r.driveId, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trashed: true })
+          });
+        }
+        await dbLoeschen(r.id);
+        rezepte = rezepte.filter(function (x) { return x.id !== r.id; });
+      }
+      setStatus(liste.length + ' Rezept(e) gelöscht.');
+      return true;
+    } catch (e) {
+      setStatus('Löschen fehlgeschlagen: ' + ((e && e.message) || e));
+      return false;
+    } finally {
+      laeuft = false;
+      render();
+    }
+  }
+
+  function aktualisiereButtons() {
+    var eingeloggt = tokenGueltig();
+    $('loginBtn').classList.toggle('hidden', eingeloggt);
+    $('syncBtn').disabled = laeuft || !eingeloggt;
+    $('auswahlBtn').textContent = auswahlModus ? 'Fertig' : 'Auswählen';
+    var n = Object.keys(auswahl).length;
+    $('loeschenBtn').classList.toggle('hidden', !(auswahlModus && n > 0));
+    $('loeschenBtn').textContent = 'Löschen (' + n + ')';
+    $('loeschenBtn').disabled = laeuft;
+  }
+
+  $('loginBtn').addEventListener('click', anmelden);
+  $('syncBtn').addEventListener('click', function () { sync(false); });
+
+  $('auswahlBtn').addEventListener('click', function () {
+    auswahlModus = !auswahlModus;
+    auswahl = {};
+    render();
+  });
+
+  $('loeschenBtn').addEventListener('click', async function () {
+    var liste = rezepte.filter(function (r) { return auswahl[r.id]; });
+    if (!liste.length) return;
+    if (!confirm(liste.length + ' Rezept(e) wirklich löschen?')) return;
+    var ok = await loescheRezepte(liste);
+    if (ok) { auswahlModus = false; auswahl = {}; render(); }
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && tokenGueltig() && !laeuft && Date.now() - zuletztSync > 60000) {
+      sync(true);
+    }
+  });
+
+  /* ---------- Liste ---------- */
+  function kategorien() {
+    var set = {};
+    rezepte.forEach(function (r) { set[r.kat || 'Rezepte'] = true; });
+    return Object.keys(set).sort(function (a, b) { return a.localeCompare(b, 'de'); });
+  }
+
+  function render() {
+    var kats = kategorien();
+    if (filter !== 'Alle' && kats.indexOf(filter) === -1) filter = 'Alle';
+
+    $('chips').innerHTML = ['Alle'].concat(kats).map(function (k) {
+      return '<button class="chip' + (k === filter ? ' aktiv' : '') + '" data-kat="' + esc(k) + '">' + esc(k) + '</button>';
+    }).join('');
+
+    var sichtbar = rezepte.filter(function (r) { return filter === 'Alle' || (r.kat || 'Rezepte') === filter; });
+
+    if (!sichtbar.length) {
+      $('liste').innerHTML = '<div class="leerhinweis">Noch keine Rezepte.<br>Tippe oben auf „+ Neu“.</div>';
+    } else {
+      $('liste').innerHTML = sichtbar.map(function (r) {
+        var bild = (r.bilder || []).find(function (b) { return b; });
+        var vorschau = bild
+          ? '<img class="bild" src="' + bild + '" alt="">'
+          : '<div class="leer">🍽️</div>';
+        var badge = '';
+        if (istLokal(r)) badge = '<span class="badge lokal">nicht in Drive</span>';
+        else if (r.auslesen) badge = '<span class="badge fertig">✓ ausgelesen</span>';
+        else if (istOffen(r)) badge = '<span class="badge offen">wartet auf n8n</span>';
+        var gew = !!auswahl[r.id];
+        var haken = auswahlModus ? '<span class="haken">' + (gew ? '✓' : '') + '</span>' : '';
+        return '<div class="karte' + (gew ? ' gewaehlt' : '') + '" data-id="' + esc(r.id) + '">' + badge + haken + vorschau +
+          '<div class="info"><div class="titel">' + esc(r.titel) + '</div>' +
+          '<div class="kat">' + esc(r.kat || 'Rezepte') + '</div></div></div>';
+      }).join('');
+    }
+    aktualisiereButtons();
+  }
+
+  $('chips').addEventListener('click', function (e) {
+    var b = e.target.closest('.chip');
+    if (!b) return;
+    filter = b.getAttribute('data-kat');
+    render();
+  });
+
+  $('liste').addEventListener('click', function (e) {
+    var k = e.target.closest('.karte');
+    if (!k) return;
+    var id = k.getAttribute('data-id');
+    if (auswahlModus) {
+      if (auswahl[id]) delete auswahl[id]; else auswahl[id] = true;
+      render();
+    } else {
+      zeigeDetail(id);
+    }
+  });
+
+  /* ---------- Detail ---------- */
+  function zeigeDetail(id) {
+    var r = rezepte.find(function (x) { return x.id === id; });
+    if (!r) return;
+    detailId = id;
+    var html = '<div class="bar"><button class="ghost" id="detailZu">← Zurück</button></div>';
+    html += '<h2>' + esc(r.titel) + '</h2>';
+    html += '<div class="kat">' + esc(r.kat || 'Rezepte') + '</div>';
+
+    var link = sichererLink(r.link);
+    if (link) html += '<a class="linkbtn" href="' + esc(link) + '" target="_blank" rel="noopener">▶ Video öffnen</a>';
+
+    var bilder = r.bilder || [];
+    if (bilder[0]) html += '<div style="height:8px"></div><img src="' + bilder[0] + '" alt="Essen">';
+
+    var a = r.auslesen;
+    if (a) {
+      if (a.portionen) html += '<div class="abschnitt">Portionen</div><div>' + esc(a.portionen) + '</div>';
+      if (a.ergibt) html += '<div class="abschnitt">Ergibt</div><div>' + esc(a.ergibt) + '</div>';
+      if (a.zutaten && a.zutaten.length) {
+        html += '<div class="abschnitt">Zutaten</div><ul>' +
+          a.zutaten.map(function (z) { return '<li>' + esc(z) + '</li>'; }).join('') + '</ul>';
+        html += '<div class="aktionen"><button class="ghost" id="zuEinkaufBtn">🛒 Zutaten auf die Einkaufsliste</button></div>';
+      }
+      var nw = a.naehrwerte || {};
+      var teile = [];
+      if (nw.kcal) teile.push(esc(nw.kcal) + ' kcal');
+      if (nw.eiweiss) teile.push('Eiweiß ' + esc(nw.eiweiss));
+      if (nw.kohlenhydrate) teile.push('Kohlenhydrate ' + esc(nw.kohlenhydrate));
+      if (nw.fett) teile.push('Fett ' + esc(nw.fett));
+      if (teile.length) {
+        html += '<div class="abschnitt">Nährwerte' + (nw.bezugsgroesse ? ' (' + esc(nw.bezugsgroesse) + ')' : '') +
+          '</div><div class="nw">' + teile.join(' · ') + '</div>';
+      }
+      if (a.zubereitung && a.zubereitung.length) {
+        html += '<div class="abschnitt">Zubereitung</div><ol>' +
+          a.zubereitung.map(function (z) { return '<li>' + esc(z) + '</li>'; }).join('') + '</ol>';
+      }
+    } else if (istOffen(r)) {
+      html += '<div class="hinweisbox">Noch nicht ausgelesen. Starte zu Hause den Kurzbefehl, dann verarbeitet n8n dieses Rezept.' +
+        (r.fehler ? '<br>Letzter Fehler: ' + esc(r.fehler) : '') + '</div>';
+    }
+
+    bilder.forEach(function (b, i) {
+      if (!b || i === 0) return;
+      html += '<div class="abschnitt">' + SLOTS[i] + '</div><img src="' + b + '" alt="' + SLOTS[i] + '">';
+    });
+
+    html += '<div class="aktionen"><button class="ghost" id="bearbeitenBtn">Bearbeiten</button>' +
+            '<button class="danger" id="loeschenEinzelBtn">Löschen</button></div>';
+
+    $('detailInhalt').innerHTML = html;
+    $('detailView').classList.remove('hidden');
+    $('detailView').scrollTop = 0;
+  }
+
+  $('detailInhalt').addEventListener('click', async function (e) {
+    var id = e.target.id;
+    if (id === 'detailZu') {
+      $('detailView').classList.add('hidden');
+    } else if (id === 'bearbeitenBtn') {
+      $('detailView').classList.add('hidden');
+      oeffneForm(detailId);
+    } else if (id === 'zuEinkaufBtn') {
+      var rz = rezepte.find(function (x) { return x.id === detailId; });
+      if (!rz) return;
+      var n = zutatenZuEinkauf(rz);
+      e.target.textContent = n ? '✓ ' + n + ' Zutaten hinzugefügt' : '✓ Schon auf der Liste';
+    } else if (id === 'loeschenEinzelBtn') {
+      var r = rezepte.find(function (x) { return x.id === detailId; });
+      if (!r || !confirm('Dieses Rezept wirklich löschen?')) return;
+      var ok = await loescheRezepte([r]);
+      if (ok) $('detailView').classList.add('hidden');
+    }
+  });
+
+  /* ---------- Formular ---------- */
+  function oeffneForm(id) {
+    editId = id || null;
+    var r = id ? rezepte.find(function (x) { return x.id === id; }) : null;
+    $('formTitel').textContent = r ? 'Rezept bearbeiten' : 'Neues Rezept';
+    $('fTitel').value = r ? r.titel : '';
+    $('fKat').value = r ? (r.kat || 'Rezepte') : (filter !== 'Alle' ? filter : '');
+    $('fLink').value = r ? (r.link || '') : '';
+    formBilder = [null, null, null, null];
+    if (r && r.bilder) r.bilder.forEach(function (b, i) { if (i < 4) formBilder[i] = b || null; });
+    $('fFehler').textContent = '';
+    $('katListe').innerHTML = kategorien().map(function (k) { return '<option value="' + esc(k) + '">'; }).join('');
+    renderSlots();
+    $('formView').classList.remove('hidden');
+    $('formView').scrollTop = 0;
+  }
+
+  function renderSlots() {
+    $('slots').innerHTML = SLOTS.map(function (name, i) {
+      var b = formBilder[i];
+      if (b) {
+        return '<div class="slot" data-i="' + i + '"><img src="' + b + '" alt="">' +
+          '<span class="tag">' + name + '</span>' +
+          '<button class="weg" data-weg="' + i + '" aria-label="Bild entfernen">✕</button></div>';
+      }
+      return '<div class="slot" data-i="' + i + '"><div class="plus">+</div><div class="name">' + name + '</div></div>';
+    }).join('');
+  }
+
+  $('slots').addEventListener('click', function (e) {
+    var weg = e.target.closest('[data-weg]');
+    if (weg) {
+      e.stopPropagation();
+      formBilder[parseInt(weg.getAttribute('data-weg'), 10)] = null;
+      renderSlots();
+      return;
+    }
+    var s = e.target.closest('.slot');
+    if (!s) return;
+    aktuellerSlot = parseInt(s.getAttribute('data-i'), 10);
+    $('fileInput').value = '';
+    $('fileInput').click();
+  });
+
+  $('fileInput').addEventListener('change', async function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    $('fFehler').textContent = '';
+    try {
+      formBilder[aktuellerSlot] = await bildAusDatei(f, aktuellerSlot);
+      renderSlots();
+    } catch (err) {
+      $('fFehler').textContent = err.message || 'Bild konnte nicht geladen werden.';
+    }
+  });
+
+  $('neuBtn').addEventListener('click', function () { oeffneForm(null); });
+  $('formZu').addEventListener('click', function () { $('formView').classList.add('hidden'); });
+
+  $('speichernBtn').addEventListener('click', async function () {
+    var titel = $('fTitel').value.trim();
+    if (!titel) { $('fFehler').textContent = 'Bitte einen Titel eingeben.'; return; }
+
+    var alt = editId ? rezepte.find(function (x) { return x.id === editId; }) : null;
+    var neueBilder = formBilder.slice();
+    var bilderGleich = alt && (alt.bilder || []).join('|') === neueBilder.join('|');
+
+    var obj = {
+      id: editId || String(Date.now()),
+      titel: titel,
+      kat: $('fKat').value.trim() || 'Rezepte',
+      link: $('fLink').value.trim(),
+      bilder: neueBilder,
+      erstellt: alt ? alt.erstellt : Date.now(),
+      auslesen: (alt && bilderGleich) ? (alt.auslesen || null) : null,
+      fehler: '',
+      driveId: alt ? alt.driveId : undefined,
+      driveModified: alt ? alt.driveModified : undefined,
+      geaendert: true
+    };
+
+    try {
+      await dbPut(obj);
+    } catch (err) {
+      $('fFehler').textContent = 'Speichern hat nicht geklappt. Ist der Speicher voll?';
+      return;
+    }
+    ersetzeLokal(obj);
+    $('formView').classList.add('hidden');
+    render();
+
+    if (tokenGueltig()) sync(true);
+    else setStatus('Lokal gespeichert. Melde dich mit Google an, dann wird es in Drive abgelegt.');
+  });
+
+  /* ---------- Einkaufsliste ---------- */
+  async function einkaufLaden() {
+    if (!tokenGueltig()) return;
+    try {
+      var ordner = await ordnerId();
+      if (!einkaufId) {
+        var q = "name='einkaufsliste.json' and '" + ordner + "' in parents and trashed=false";
+        var j = await (await drive('/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id)')).json();
+        if (j.files && j.files.length) { einkaufId = j.files[0].id; localStorage.setItem('einkaufId', einkaufId); }
+      }
+      if (einkaufId) {
+        var d = await (await drive('/drive/v3/files/' + einkaufId + '?alt=media')).json();
+        if (d && Array.isArray(d.items)) einkauf = d;
+      }
+      localStorage.setItem('einkaufCache', JSON.stringify(einkauf));
+    } catch (e) { /* Kopie bleibt */ }
+  }
+
+  async function einkaufSpeichern() {
+    if (!tokenGueltig()) return;
+    try {
+      var ordner = await ordnerId();
+      var d = await dateiSchreiben('einkaufsliste.json', einkauf, einkaufId || null, null, ordner);
+      if (!einkaufId) { einkaufId = d.id; localStorage.setItem('einkaufId', einkaufId); }
+    } catch (e) { setStatus('Einkaufsliste konnte nicht gespeichert werden.'); }
+  }
+
+  function einkaufSpeichernSpaeter() {
+    localStorage.setItem('einkaufCache', JSON.stringify(einkauf));
+    clearTimeout(einkaufTimer);
+    einkaufTimer = setTimeout(einkaufSpeichern, 800);
+  }
+
+  function zutatenZuEinkauf(r) {
+    var z = (r.auslesen && r.auslesen.zutaten) || [];
+    var n = 0;
+    z.forEach(function (t) {
+      var da = einkauf.items.some(function (x) { return x.rid === r.id && x.text === t; });
+      if (!da) { einkauf.items.push({ rid: r.id, rezept: r.titel, text: t, erledigt: false }); n++; }
+    });
+    einkaufSpeichernSpaeter();
+    return n;
+  }
+
+  function renderEinkauf() {
+    var gruppen = {};
+    var reihenfolge = [];
+    einkauf.items.forEach(function (it, idx) {
+      var g = it.rezept || 'Sonstiges';
+      if (!gruppen[g]) { gruppen[g] = []; reihenfolge.push(g); }
+      gruppen[g].push(idx);
+    });
+    if (!reihenfolge.length) {
+      $('einkaufInhalt').innerHTML = '<div class="leerhinweis" style="padding:30px 0">Die Liste ist leer.</div>';
+      return;
+    }
+    $('einkaufInhalt').innerHTML = reihenfolge.map(function (g) {
+      return '<div class="gruppe">' + esc(g) + '</div>' + gruppen[g].map(function (idx) {
+        var it = einkauf.items[idx];
+        return '<label class="pos' + (it.erledigt ? ' erledigt' : '') + '" style="margin:0 0 8px">' +
+          '<input type="checkbox" data-idx="' + idx + '"' + (it.erledigt ? ' checked' : '') + '>' +
+          '<span>' + esc(it.text) + '</span></label>';
+      }).join('');
+    }).join('');
+  }
+
+  $('einkaufBtn').addEventListener('click', async function () {
+    renderEinkauf();
+    $('einkaufView').classList.remove('hidden');
+    $('einkaufView').scrollTop = 0;
+    await einkaufLaden();
+    renderEinkauf();
+  });
+  $('einkaufZu').addEventListener('click', function () { $('einkaufView').classList.add('hidden'); });
+
+  $('einkaufInhalt').addEventListener('change', function (e) {
+    var idx = e.target.getAttribute('data-idx');
+    if (idx === null) return;
+    einkauf.items[parseInt(idx, 10)].erledigt = e.target.checked;
+    einkaufSpeichernSpaeter();
+    renderEinkauf();
+  });
+
+  function neuePosition() {
+    var t = $('neuPosText').value.trim();
+    if (!t) return;
+    einkauf.items.push({ rid: '', rezept: '', text: t, erledigt: false });
+    $('neuPosText').value = '';
+    einkaufSpeichernSpaeter();
+    renderEinkauf();
+  }
+  $('neuPosBtn').addEventListener('click', neuePosition);
+  $('neuPosText').addEventListener('keydown', function (e) { if (e.key === 'Enter') neuePosition(); });
+
+  $('erledigteWeg').addEventListener('click', function () {
+    einkauf.items = einkauf.items.filter(function (x) { return !x.erledigt; });
+    einkaufSpeichernSpaeter();
+    renderEinkauf();
+  });
+  $('alleWeg').addEventListener('click', function () {
+    if (!einkauf.items.length || !confirm('Die ganze Einkaufsliste leeren?')) return;
+    einkauf.items = [];
+    einkaufSpeichernSpaeter();
+    renderEinkauf();
+  });
+
+  /* ---------- Einstellungen ---------- */
+  function zeigeSettings() {
+    $('sOrdner').value = localStorage.getItem('ordnerId') || '(noch nicht angelegt: erst mit Google anmelden)';
+    $('sKonto').textContent = tokenGueltig()
+      ? 'Angemeldet. Die Anmeldung gilt etwa eine Stunde, danach tippst du wieder auf „Mit Google anmelden“.'
+      : 'Nicht angemeldet.';
+    $('settingsView').classList.remove('hidden');
+  }
+  $('settingsBtn').addEventListener('click', zeigeSettings);
+  $('settingsZu').addEventListener('click', function () { $('settingsView').classList.add('hidden'); });
+  $('sKopieren').addEventListener('click', function () {
+    var v = $('sOrdner').value;
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v);
+    else { $('sOrdner').select(); document.execCommand('copy'); }
+    $('sKopieren').textContent = '✓ Kopiert';
+  });
+  $('sOrdnerNeu').addEventListener('click', function () {
+    localStorage.removeItem('ordnerId');
+    localStorage.removeItem('einkaufId');
+    einkaufId = '';
+    $('sOrdner').value = '(wird beim nächsten Synchronisieren neu gesucht)';
+  });
+  $('sAbmelden').addEventListener('click', function () {
+    if (accessToken && window.google && google.accounts && google.accounts.oauth2) {
+      google.accounts.oauth2.revoke(accessToken, function () { /* fertig */ });
+    }
+    accessToken = '';
+    tokenExpires = 0;
+    localStorage.removeItem('gtoken');
+    aktualisiereButtons();
+    $('settingsView').classList.add('hidden');
+    setStatus('Abgemeldet.');
+  });
+
+  /* ---------- Start ---------- */
+  (async function () {
+    try {
+      db = await openDB();
+      rezepte = await dbAlle();
+      sortieren();
+      render();
+    } catch (err) {
+      $('liste').innerHTML = '<div class="leerhinweis">Der Speicher im Browser ist nicht verfügbar.<br>Öffne die Seite nicht im privaten Modus.</div>';
+      return;
+    }
+    tokenAusSpeicher();
+    initGoogle();
+    aktualisiereButtons();
+    if (tokenGueltig()) sync(true);
+    else setStatus('Nicht angemeldet. Du siehst die zuletzt geladenen Rezepte.');
+  })();
+</script>
+</body>
+</html>
