@@ -49,6 +49,7 @@
   .karte .info { padding: 10px 12px 12px; }
   .karte .titel { font-weight: 700; font-size: 15px; line-height: 1.25; }
   .karte .kat { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .karte .eiwk { color: var(--accent); font-weight: 700; font-size: 13px; margin-top: 4px; }
   .haken { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 50%;
     background: rgba(0,0,0,.7); border: 2px solid #fff; display: flex; align-items: center;
     justify-content: center; font-weight: 700; color: #1b1408; }
@@ -88,7 +89,12 @@
   .detail img { width: 100%; display: block; border-radius: var(--radius); background: var(--card2); }
   .detail ul, .detail ol { margin: 0; padding-left: 22px; line-height: 1.55; }
   .detail li { margin-bottom: 6px; }
-  .detail .nw { color: var(--muted); line-height: 1.6; }
+  .nwbox { background: var(--card); border-radius: var(--radius); padding: 14px 16px; margin-top: 14px; }
+  .nwbox .eiw { display: flex; align-items: baseline; gap: 10px; }
+  .nwbox .zahl { font-size: 36px; font-weight: 800; color: var(--accent); line-height: 1.1; }
+  .nwbox .lbl { font-weight: 700; font-size: 16px; }
+  .nwbox .rest { color: var(--muted); margin-top: 6px; line-height: 1.5; font-size: 15px; }
+  .nwbox .bezug { color: var(--muted); margin-top: 6px; font-size: 13px; }
   .hinweisbox { color: var(--muted); font-size: 14px; background: var(--card); padding: 12px 14px;
     border-radius: 12px; margin-top: 8px; line-height: 1.5; }
   .linkbtn { display: inline-block; text-decoration: none; background: var(--accent); color: #1b1408;
@@ -97,11 +103,12 @@
   .aktionen button { flex: 1; }
   .gruppe { margin: 22px 0 8px; font-weight: 700; color: var(--accent); font-size: 14px;
     text-transform: uppercase; letter-spacing: .04em; }
-  .pos { display: flex; gap: 12px; align-items: center; padding: 12px; background: var(--card);
+  .pos { display: flex; gap: 10px; align-items: center; padding: 10px 12px; background: var(--card);
     border-radius: 12px; margin-bottom: 8px; }
   .pos input[type="checkbox"] { width: 22px; height: 22px; flex: 0 0 auto; accent-color: var(--accent); }
   .pos span { flex: 1; line-height: 1.35; }
   .pos.erledigt span { text-decoration: line-through; color: var(--muted); }
+  .pos input.rest { width: 72px; flex: 0 0 auto; padding: 9px 8px; text-align: center; font-size: 15px; }
   .neuPos { display: flex; gap: 8px; margin-top: 8px; }
   .neuPos input { flex: 1; }
 </style>
@@ -168,6 +175,7 @@
       <h2>🛒 Einkaufsliste</h2>
       <span style="width:80px"></span>
     </div>
+    <div class="hinweisbox" style="margin:0 0 12px">Im Feld „noch“ trägst du ein, wie viel du noch brauchst (z. B. bei „4 Eier“ eine 2). Leer lassen heißt: volle Menge. Eine 0 heißt: schon da.</div>
     <div class="neuPos">
       <input type="text" id="neuPosText" placeholder="Artikel hinzufügen" autocomplete="off">
       <button id="neuPosBtn">+</button>
@@ -522,8 +530,9 @@
       // 4) Was in Drive nicht mehr existiert, lokal entfernen
       var weg = rezepte.filter(function (r) { return r.driveId && !serverIds[r.driveId]; });
       for (var w = 0; w < weg.length; w++) {
-        await dbLoeschen(weg[w].id);
-        rezepte = rezepte.filter(function (x) { return x.id !== weg[w].id; });
+        var wid = weg[w].id;
+        await dbLoeschen(wid);
+        rezepte = rezepte.filter(function (x) { return x.id !== wid; });
       }
 
       sortieren();
@@ -556,7 +565,8 @@
           });
         }
         await dbLoeschen(r.id);
-        rezepte = rezepte.filter(function (x) { return x.id !== r.id; });
+        var rid = r.id;
+        rezepte = rezepte.filter(function (x) { return x.id !== rid; });
       }
       setStatus(liste.length + ' Rezept(e) gelöscht.');
       return true;
@@ -610,6 +620,11 @@
     return Object.keys(set).sort(function (a, b) { return a.localeCompare(b, 'de'); });
   }
 
+  function eiweissVon(r) {
+    var nw = r.auslesen && r.auslesen.naehrwerte;
+    return (nw && nw.eiweiss) ? String(nw.eiweiss) : '';
+  }
+
   function render() {
     var kats = kategorien();
     if (filter !== 'Alle' && kats.indexOf(filter) === -1) filter = 'Alle';
@@ -634,9 +649,12 @@
         else if (istOffen(r)) badge = '<span class="badge offen">wartet auf n8n</span>';
         var gew = !!auswahl[r.id];
         var haken = auswahlModus ? '<span class="haken">' + (gew ? '✓' : '') + '</span>' : '';
+        var eiw = eiweissVon(r);
         return '<div class="karte' + (gew ? ' gewaehlt' : '') + '" data-id="' + esc(r.id) + '">' + badge + haken + vorschau +
           '<div class="info"><div class="titel">' + esc(r.titel) + '</div>' +
-          '<div class="kat">' + esc(r.kat || 'Rezepte') + '</div></div></div>';
+          '<div class="kat">' + esc(r.kat || 'Rezepte') + '</div>' +
+          (eiw ? '<div class="eiwk">💪 ' + esc(eiw) + ' Eiweiß</div>' : '') +
+          '</div></div>';
       }).join('');
     }
     aktualisiereButtons();
@@ -678,22 +696,28 @@
 
     var a = r.auslesen;
     if (a) {
-      if (a.portionen) html += '<div class="abschnitt">Portionen</div><div>' + esc(a.portionen) + '</div>';
-      if (a.ergibt) html += '<div class="abschnitt">Ergibt</div><div>' + esc(a.ergibt) + '</div>';
+      var nw = a.naehrwerte || {};
+      var rest = [];
+      if (nw.kcal) rest.push(esc(nw.kcal) + ' kcal');
+      if (nw.kohlenhydrate) rest.push('Kohlenhydrate ' + esc(nw.kohlenhydrate));
+      if (nw.fett) rest.push('Fett ' + esc(nw.fett));
+
+      if (nw.eiweiss || rest.length || a.portionen || a.ergibt) {
+        html += '<div class="nwbox">';
+        if (nw.eiweiss) {
+          html += '<div class="eiw"><span class="zahl">' + esc(nw.eiweiss) + '</span><span class="lbl">Eiweiß</span></div>';
+        }
+        if (rest.length) html += '<div class="rest">' + rest.join(' · ') + '</div>';
+        if (nw.bezugsgroesse) html += '<div class="bezug">' + esc(nw.bezugsgroesse) + '</div>';
+        if (a.portionen) html += '<div class="bezug">Portionen: ' + esc(a.portionen) + '</div>';
+        if (a.ergibt) html += '<div class="bezug">Ergibt: ' + esc(a.ergibt) + '</div>';
+        html += '</div>';
+      }
+
       if (a.zutaten && a.zutaten.length) {
         html += '<div class="abschnitt">Zutaten</div><ul>' +
           a.zutaten.map(function (z) { return '<li>' + esc(z) + '</li>'; }).join('') + '</ul>';
         html += '<div class="aktionen"><button class="ghost" id="zuEinkaufBtn">🛒 Zutaten auf die Einkaufsliste</button></div>';
-      }
-      var nw = a.naehrwerte || {};
-      var teile = [];
-      if (nw.kcal) teile.push(esc(nw.kcal) + ' kcal');
-      if (nw.eiweiss) teile.push('Eiweiß ' + esc(nw.eiweiss));
-      if (nw.kohlenhydrate) teile.push('Kohlenhydrate ' + esc(nw.kohlenhydrate));
-      if (nw.fett) teile.push('Fett ' + esc(nw.fett));
-      if (teile.length) {
-        html += '<div class="abschnitt">Nährwerte' + (nw.bezugsgroesse ? ' (' + esc(nw.bezugsgroesse) + ')' : '') +
-          '</div><div class="nw">' + teile.join(' · ') + '</div>';
       }
       if (a.zubereitung && a.zubereitung.length) {
         html += '<div class="abschnitt">Zubereitung</div><ol>' +
@@ -870,10 +894,23 @@
     var n = 0;
     z.forEach(function (t) {
       var da = einkauf.items.some(function (x) { return x.rid === r.id && x.text === t; });
-      if (!da) { einkauf.items.push({ rid: r.id, rezept: r.titel, text: t, erledigt: false }); n++; }
+      if (!da) { einkauf.items.push({ rid: r.id, rezept: r.titel, text: t, erledigt: false, rest: '' }); n++; }
     });
     einkaufSpeichernSpaeter();
     return n;
+  }
+
+  // Zeigt die Zutat mit der Restmenge: "4 Eier" + noch 2 => "2 Eier"
+  function anzeigeText(it) {
+    var rest = String(it.rest == null ? '' : it.rest).trim();
+    if (rest === '') return it.text;
+    if (rest === '0') return it.text + ' – schon da';
+    var m = /^\s*(\d+\/\d+|\d+(?:[.,]\d+)?)(.*)$/.exec(it.text);
+    if (m && !/^[-–\/]/.test(m[2])) {
+      var abstand = /^[\s.,]/.test(m[2]) || m[2] === '' ? '' : ' ';
+      return rest + abstand + m[2];
+    }
+    return it.text + ' (noch ' + rest + ')';
   }
 
   function renderEinkauf() {
@@ -891,9 +928,12 @@
     $('einkaufInhalt').innerHTML = reihenfolge.map(function (g) {
       return '<div class="gruppe">' + esc(g) + '</div>' + gruppen[g].map(function (idx) {
         var it = einkauf.items[idx];
-        return '<label class="pos' + (it.erledigt ? ' erledigt' : '') + '" style="margin:0 0 8px">' +
-          '<input type="checkbox" data-idx="' + idx + '"' + (it.erledigt ? ' checked' : '') + '>' +
-          '<span>' + esc(it.text) + '</span></label>';
+        var fertig = it.erledigt || String(it.rest == null ? '' : it.rest).trim() === '0';
+        return '<div class="pos' + (fertig ? ' erledigt' : '') + '" data-row="' + idx + '">' +
+          '<input type="checkbox" data-chk="' + idx + '"' + (it.erledigt ? ' checked' : '') + '>' +
+          '<span data-txt="' + idx + '">' + esc(anzeigeText(it)) + '</span>' +
+          '<input type="text" class="rest" inputmode="decimal" autocomplete="off" aria-label="Noch nötig" placeholder="noch" data-rest="' + idx + '" value="' + esc(it.rest == null ? '' : it.rest) + '">' +
+          '</div>';
       }).join('');
     }).join('');
   }
@@ -903,22 +943,37 @@
     $('einkaufView').classList.remove('hidden');
     $('einkaufView').scrollTop = 0;
     await einkaufLaden();
-    renderEinkauf();
+    var aktiv = document.activeElement;
+    if (!(aktiv && aktiv.getAttribute && aktiv.getAttribute('data-rest') !== null)) renderEinkauf();
   });
   $('einkaufZu').addEventListener('click', function () { $('einkaufView').classList.add('hidden'); });
 
   $('einkaufInhalt').addEventListener('change', function (e) {
-    var idx = e.target.getAttribute('data-idx');
-    if (idx === null) return;
-    einkauf.items[parseInt(idx, 10)].erledigt = e.target.checked;
+    var chk = e.target.getAttribute('data-chk');
+    if (chk === null) return;
+    einkauf.items[parseInt(chk, 10)].erledigt = e.target.checked;
     einkaufSpeichernSpaeter();
     renderEinkauf();
+  });
+
+  $('einkaufInhalt').addEventListener('input', function (e) {
+    var ri = e.target.getAttribute('data-rest');
+    if (ri === null) return;
+    var idx = parseInt(ri, 10);
+    var it = einkauf.items[idx];
+    if (!it) return;
+    it.rest = e.target.value.trim();
+    var txt = $('einkaufInhalt').querySelector('[data-txt="' + idx + '"]');
+    if (txt) txt.textContent = anzeigeText(it);
+    var row = $('einkaufInhalt').querySelector('[data-row="' + idx + '"]');
+    if (row) row.classList.toggle('erledigt', it.erledigt || it.rest === '0');
+    einkaufSpeichernSpaeter();
   });
 
   function neuePosition() {
     var t = $('neuPosText').value.trim();
     if (!t) return;
-    einkauf.items.push({ rid: '', rezept: '', text: t, erledigt: false });
+    einkauf.items.push({ rid: '', rezept: '', text: t, erledigt: false, rest: '' });
     $('neuPosText').value = '';
     einkaufSpeichernSpaeter();
     renderEinkauf();
@@ -927,7 +982,9 @@
   $('neuPosText').addEventListener('keydown', function (e) { if (e.key === 'Enter') neuePosition(); });
 
   $('erledigteWeg').addEventListener('click', function () {
-    einkauf.items = einkauf.items.filter(function (x) { return !x.erledigt; });
+    einkauf.items = einkauf.items.filter(function (x) {
+      return !(x.erledigt || String(x.rest == null ? '' : x.rest).trim() === '0');
+    });
     einkaufSpeichernSpaeter();
     renderEinkauf();
   });
