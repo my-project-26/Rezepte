@@ -62,6 +62,7 @@
   .leerhinweis { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 60px 20px; }
   .overlay { position: fixed; inset: 0; background: var(--bg); overflow-y: auto; z-index: 10;
     padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  #zeileView { z-index: 20; }
   .hidden { display: none !important; }
   .sheet { max-width: 700px; margin: 0 auto; padding: 14px 16px 60px; }
   .bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
@@ -95,6 +96,15 @@
   .nwbox .lbl { font-weight: 700; font-size: 16px; }
   .nwbox .rest { color: var(--muted); margin-top: 6px; line-height: 1.5; font-size: 15px; }
   .nwbox .bezug { color: var(--muted); margin-top: 6px; font-size: 13px; }
+  details.rechnung { background: var(--card); border-radius: var(--radius); padding: 12px 16px; margin-top: 12px; }
+  details.rechnung summary { cursor: pointer; font-weight: 700; color: var(--accent); }
+  details.rechnung .hinw { color: var(--muted); font-size: 13px; margin: 8px 0; line-height: 1.4; }
+  .zeile { padding: 10px 0; border-top: 1px solid #3a362c; cursor: pointer; }
+  .zeile .zn { font-weight: 600; line-height: 1.3; }
+  .zeile .zm { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .zeile .zw { font-size: 14px; margin-top: 4px; }
+  .summebox { border-top: 2px solid var(--accent); margin-top: 4px; padding-top: 10px; line-height: 1.55; font-size: 14px; }
+  .summebox b { color: var(--accent); }
   .hinweisbox { color: var(--muted); font-size: 14px; background: var(--card); padding: 12px 14px;
     border-radius: 12px; margin-top: 8px; line-height: 1.5; }
   .linkbtn { display: inline-block; text-decoration: none; background: var(--accent); color: #1b1408;
@@ -167,6 +177,28 @@
   <div class="sheet detail" id="detailInhalt"></div>
 </div>
 
+<!-- Zutat bearbeiten -->
+<div id="zeileView" class="overlay hidden">
+  <div class="sheet">
+    <div class="bar">
+      <button class="ghost" id="zeileZu">Abbrechen</button>
+      <h2 id="zeileTitel">Zutat</h2>
+      <button id="zeileSave">Speichern</button>
+    </div>
+    <label for="zGramm">Menge in Gramm</label>
+    <input type="text" id="zGramm" inputmode="decimal" autocomplete="off">
+    <label for="zKcal">kcal je 100 g</label>
+    <input type="text" id="zKcal" inputmode="decimal" autocomplete="off">
+    <label for="zEiw">Eiweiß je 100 g</label>
+    <input type="text" id="zEiw" inputmode="decimal" autocomplete="off">
+    <label for="zKh">Kohlenhydrate je 100 g</label>
+    <input type="text" id="zKh" inputmode="decimal" autocomplete="off">
+    <label for="zFett">Fett je 100 g</label>
+    <input type="text" id="zFett" inputmode="decimal" autocomplete="off">
+    <div class="hinweisbox">Die Summe oben im Rezept rechnet sich nach dem Speichern sofort neu.</div>
+  </div>
+</div>
+
 <!-- Einkaufsliste -->
 <div id="einkaufView" class="overlay hidden">
   <div class="sheet">
@@ -218,7 +250,7 @@
 <script>
   /* ====== EINSTELLUNGEN ====== */
   // Client-ID aus der Google Cloud Console. Alternativ trägst du sie in der App unter ⚙️ Einstellungen ein.
-  var GOOGLE_CLIENT_ID = '19193012391-esegi0gpasckh74dt776ducjpj13c72t.apps.googleusercontent.com';
+  var GOOGLE_CLIENT_ID = 'HIER_CLIENT_ID_EINTRAGEN';
   var SCOPE = 'https://www.googleapis.com/auth/drive';
   var ORDNER_NAME = 'Rezepte';
 
@@ -240,6 +272,7 @@
   var formBilder = [null, null, null, null];
   var aktuellerSlot = 0;
   var detailId = null;
+  var zeileIdx = -1;
   var laeuft = false;
   var nochmal = false;
   var zuletztSync = 0;
@@ -289,6 +322,53 @@
   function fuerDrive(r) {
     return { id: r.id, titel: r.titel, kat: r.kat, link: r.link, bilder: r.bilder,
       erstellt: r.erstellt, auslesen: r.auslesen || null, fehler: r.fehler || '' };
+  }
+
+  /* ---------- Zahlen und Nährwert-Rechnung ---------- */
+  function zahlIn(v) {
+    var x = parseFloat(String(v == null ? '' : v).replace(',', '.'));
+    return (isNaN(x) || x < 0) ? 0 : x;
+  }
+  function z1(v) { return (Math.round(v * 10) / 10).toLocaleString('de-DE', { maximumFractionDigits: 1 }); }
+  function z0(v) { return Math.round(v).toLocaleString('de-DE'); }
+
+  function werteZeile(z) {
+    var f = (z.gramm || 0) / 100;
+    var j = z.je100 || {};
+    return {
+      kcal: (j.kcal || 0) * f,
+      eiweiss: (j.eiweiss || 0) * f,
+      kohlenhydrate: (j.kohlenhydrate || 0) * f,
+      fett: (j.fett || 0) * f
+    };
+  }
+
+  function summe(rc) {
+    var s = { kcal: 0, eiweiss: 0, kohlenhydrate: 0, fett: 0 };
+    ((rc && rc.zeilen) || []).forEach(function (z) {
+      var w = werteZeile(z);
+      s.kcal += w.kcal; s.eiweiss += w.eiweiss; s.kohlenhydrate += w.kohlenhydrate; s.fett += w.fett;
+    });
+    return s;
+  }
+
+  // Hauptwerte des Rezepts: aus dem Bild oder live aus der Zutaten-Rechnung
+  function hauptNaehrwerte(a) {
+    if (!a) return {};
+    var nw = a.naehrwerte || {};
+    var rc = a.rechnung;
+    if (nw.quelle === 'bild' || !rc || !rc.zeilen || !rc.zeilen.length) return nw;
+    var s = summe(rc);
+    if (!(s.kcal > 0)) return nw;
+    var t = rc.teiler > 1 ? rc.teiler : 1;
+    return {
+      kcal: String(Math.round(s.kcal / t)),
+      eiweiss: Math.round(s.eiweiss / t) + ' g',
+      kohlenhydrate: Math.round(s.kohlenhydrate / t) + ' g',
+      fett: Math.round(s.fett / t) + ' g',
+      bezugsgroesse: (t > 1 ? 'pro Portion (' + t + ' Portionen)' : 'ganzes Rezept') + ', aus den Zutaten berechnet',
+      quelle: 'zutaten'
+    };
   }
 
   /* ---------- Lokaler Speicher (Kopie) ---------- */
@@ -651,7 +731,8 @@
   }
 
   function eiweissVon(r) {
-    var nw = r.auslesen && r.auslesen.naehrwerte;
+    if (!r.auslesen) return '';
+    var nw = hauptNaehrwerte(r.auslesen);
     return (nw && nw.eiweiss) ? String(nw.eiweiss) : '';
   }
 
@@ -711,6 +792,45 @@
   });
 
   /* ---------- Detail ---------- */
+  function rechnungHtml(a) {
+    var rc = a.rechnung;
+    if (!rc || !rc.zeilen || !rc.zeilen.length) return '';
+    var s = summe(rc);
+    var t = rc.teiler > 1 ? rc.teiler : 1;
+    var html = '<details class="rechnung"><summary>🧮 Rechnung anzeigen</summary>';
+    html += '<div class="hinw">Jede Zutat wird mit ihrer Menge auf die Werte je 100 g hochgerechnet. Tippe auf eine Zutat, um Menge oder Werte zu korrigieren.</div>';
+    rc.zeilen.forEach(function (z, i) {
+      var w = werteZeile(z);
+      var j = z.je100 || {};
+      html += '<div class="zeile" data-zeile="' + i + '">' +
+        '<div class="zn">' + esc(z.zutat) + '</div>' +
+        '<div class="zm">' + z1(z.gramm || 0) + ' g' + (z.angenommen ? ' (Menge geschätzt)' : '') +
+        ' · je 100 g: ' + z1(j.kcal || 0) + ' kcal, E ' + z1(j.eiweiss || 0) + ', KH ' + z1(j.kohlenhydrate || 0) + ', F ' + z1(j.fett || 0) + '</div>' +
+        '<div class="zw">' + z0(w.kcal) + ' kcal · Eiweiß ' + z1(w.eiweiss) + ' g · KH ' + z1(w.kohlenhydrate) + ' g · Fett ' + z1(w.fett) + ' g</div>' +
+        '</div>';
+    });
+    html += '<div class="summebox"><b>Summe der Zutaten (ganzes Rezept):</b><br>' +
+      z0(s.kcal) + ' kcal · Eiweiß ' + z1(s.eiweiss) + ' g · KH ' + z1(s.kohlenhydrate) + ' g · Fett ' + z1(s.fett) + ' g';
+    if (t > 1) {
+      html += '<br><b>Pro Portion (' + t + ' Portionen):</b><br>' +
+        z0(s.kcal / t) + ' kcal · Eiweiß ' + z1(s.eiweiss / t) + ' g · KH ' + z1(s.kohlenhydrate / t) + ' g · Fett ' + z1(s.fett / t) + ' g';
+    }
+    var nb = a.naehrwerteBild;
+    if (nb) {
+      html += '<br><b>Angabe aus dem Bild:</b><br>' + esc(nb.kcal) + ' kcal · Eiweiß ' + esc(nb.eiweiss) + ' · KH ' + esc(nb.kohlenhydrate) + ' · Fett ' + esc(nb.fett) +
+        '<br><span style="color:var(--muted)">' + esc(nb.hinweis || '') + '</span>';
+    }
+    html += '</div>';
+    if (nb) {
+      var q = (a.naehrwerte || {}).quelle;
+      html += '<div class="aktionen">' + (q === 'bild'
+        ? '<button class="ghost" id="nutzeRechnungBtn">Stattdessen meine Zutaten-Rechnung verwenden</button>'
+        : '<button class="ghost" id="nutzeBildBtn">Stattdessen die Bildwerte verwenden</button>') + '</div>';
+    }
+    html += '</details>';
+    return html;
+  }
+
   function zeigeDetail(id) {
     var r = rezepte.find(function (x) { return x.id === id; });
     if (!r) return;
@@ -727,7 +847,7 @@
 
     var a = r.auslesen;
     if (a) {
-      var nw = a.naehrwerte || {};
+      var nw = hauptNaehrwerte(a);
       var rest = [];
       if (nw.kcal) rest.push(esc(nw.kcal) + ' kcal');
       if (nw.kohlenhydrate) rest.push('Kohlenhydrate ' + esc(nw.kohlenhydrate));
@@ -744,6 +864,8 @@
         if (a.ergibt) html += '<div class="bezug">Ergibt: ' + esc(a.ergibt) + '</div>';
         html += '</div>';
       }
+
+      html += rechnungHtml(a);
 
       if (a.zutaten && a.zutaten.length) {
         html += '<div class="abschnitt">Zutaten</div><ul>' +
@@ -775,7 +897,28 @@
     $('detailView').scrollTop = 0;
   }
 
+  function detailNeuZeichnen() {
+    var st = $('detailView').scrollTop;
+    var offen = $('detailInhalt').querySelector('details.rechnung');
+    var warOffen = !!(offen && offen.open);
+    zeigeDetail(detailId);
+    var neu = $('detailInhalt').querySelector('details.rechnung');
+    if (neu && warOffen) neu.open = true;
+    $('detailView').scrollTop = st;
+  }
+
+  async function auslesenGeaendert(r) {
+    r.geaendert = true;
+    await dbPut(r);
+    detailNeuZeichnen();
+    render();
+    if (tokenGueltig()) sync(true);
+  }
+
   $('detailInhalt').addEventListener('click', async function (e) {
+    var zl = e.target.closest('[data-zeile]');
+    if (zl) { oeffneZeile(parseInt(zl.getAttribute('data-zeile'), 10)); return; }
+
     var id = e.target.id;
     if (id === 'detailZu') {
       $('detailView').classList.add('hidden');
@@ -784,6 +927,17 @@
       oeffneForm(detailId);
     } else if (id === 'neuAuslesenBtn') {
       if (confirm('Dieses Rezept neu auslesen lassen? Die bisherigen ausgelesenen Daten werden ersetzt.')) neuAuslesen(detailId);
+    } else if (id === 'nutzeRechnungBtn' || id === 'nutzeBildBtn') {
+      var rq = rezepte.find(function (x) { return x.id === detailId; });
+      if (!rq || !rq.auslesen) return;
+      var aq = rq.auslesen;
+      if (id === 'nutzeRechnungBtn') {
+        aq.naehrwerte = Object.assign({}, aq.naehrwerte, { quelle: 'zutaten' });
+      } else if (aq.naehrwerteBild) {
+        var nb = aq.naehrwerteBild;
+        aq.naehrwerte = { kcal: nb.kcal, eiweiss: nb.eiweiss, kohlenhydrate: nb.kohlenhydrate, fett: nb.fett, bezugsgroesse: nb.hinweis, quelle: 'bild' };
+      }
+      await auslesenGeaendert(rq);
     } else if (id === 'zuEinkaufBtn') {
       var rz = rezepte.find(function (x) { return x.id === detailId; });
       if (!rz) return;
@@ -795,6 +949,45 @@
       var ok = await loescheRezepte([r]);
       if (ok) $('detailView').classList.add('hidden');
     }
+  });
+
+  /* ---------- Zutat bearbeiten ---------- */
+  function komma(v) { return String(v == null ? 0 : v).replace('.', ','); }
+
+  function oeffneZeile(i) {
+    var r = rezepte.find(function (x) { return x.id === detailId; });
+    if (!r || !r.auslesen || !r.auslesen.rechnung) return;
+    var z = r.auslesen.rechnung.zeilen[i];
+    if (!z) return;
+    zeileIdx = i;
+    var j = z.je100 || {};
+    $('zeileTitel').textContent = z.zutat.length > 28 ? z.zutat.slice(0, 28) + '…' : z.zutat;
+    $('zGramm').value = komma(z.gramm);
+    $('zKcal').value = komma(j.kcal);
+    $('zEiw').value = komma(j.eiweiss);
+    $('zKh').value = komma(j.kohlenhydrate);
+    $('zFett').value = komma(j.fett);
+    $('zeileView').classList.remove('hidden');
+    $('zeileView').scrollTop = 0;
+  }
+
+  $('zeileZu').addEventListener('click', function () { $('zeileView').classList.add('hidden'); });
+
+  $('zeileSave').addEventListener('click', async function () {
+    var r = rezepte.find(function (x) { return x.id === detailId; });
+    if (!r || !r.auslesen || !r.auslesen.rechnung) { $('zeileView').classList.add('hidden'); return; }
+    var z = r.auslesen.rechnung.zeilen[zeileIdx];
+    if (!z) { $('zeileView').classList.add('hidden'); return; }
+    z.gramm = zahlIn($('zGramm').value);
+    z.je100 = {
+      kcal: zahlIn($('zKcal').value),
+      eiweiss: zahlIn($('zEiw').value),
+      kohlenhydrate: zahlIn($('zKh').value),
+      fett: zahlIn($('zFett').value)
+    };
+    z.angenommen = false;
+    $('zeileView').classList.add('hidden');
+    await auslesenGeaendert(r);
   });
 
   /* ---------- Formular ---------- */
