@@ -161,7 +161,7 @@
     <input type="text" id="fKat" list="katListe" placeholder="Rezepte" autocomplete="off">
     <datalist id="katListe"></datalist>
 
-    <label for="fLink">Link zum Video</label>
+    <label for="fLink">Link zum Rezept oder Video</label>
     <input type="url" id="fLink" placeholder="https://www.instagram.com/reel/..." autocomplete="off">
 
     <label>Bilder</label>
@@ -250,7 +250,7 @@
 <script>
   /* ====== EINSTELLUNGEN ====== */
   // Client-ID aus der Google Cloud Console. Alternativ trägst du sie in der App unter ⚙️ Einstellungen ein.
-  var GOOGLE_CLIENT_ID = '1sPMxxwR38HZc4ezbfBihwrIAAd7OPo25';
+  var GOOGLE_CLIENT_ID = '';
   var SCOPE = 'https://www.googleapis.com/auth/drive';
   var ORDNER_NAME = 'Rezepte';
 
@@ -306,14 +306,16 @@
     return /^https?:\/\//i.test(u) ? u : '';
   }
 
-  function clientId() { return localStorage.getItem('clientId') || GOOGLE_CLIENT_ID; }
+  function clientId() { return (localStorage.getItem('clientId') || GOOGLE_CLIENT_ID).trim(); }
+  function clientIdGueltig(v) { return /^[a-zA-Z0-9-]+\.apps\.googleusercontent\.com$/.test(v); }
 
   function hatBild(r) { return (r.bilder || []).some(function (b) { return b; }); }
-  function istOffen(r) { return !r.auslesen && !r.fehler && hatBild(r); }
-  function istFehler(r) { return !r.auslesen && !!r.fehler && hatBild(r); }
+  function hatQuelle(r) { return hatBild(r) || !!sichererLink(r.link); }
+  function istOffen(r) { return !r.auslesen && !r.fehler && hatQuelle(r); }
+  function istFehler(r) { return !r.auslesen && !!r.fehler && hatQuelle(r); }
   function istLokal(r) { return !r.driveId || !!r.geaendert; }
   function statusVon(r) {
-    if (r.auslesen || !hatBild(r)) return 'fertig';
+    if (r.auslesen || !hatQuelle(r)) return 'fertig';
     return r.fehler ? 'fehler' : 'offen';
   }
   function setStatus(t) { $('n8nStatus').textContent = t || ''; }
@@ -463,12 +465,16 @@
     } catch (e) { /* kein Token */ }
   }
 
+  var googleVersuche = 0;
   function initGoogle() {
-    if (clientId().indexOf('HIER_') === 0) return;
-    if (!window.google || !google.accounts || !google.accounts.oauth2) { setTimeout(initGoogle, 300); return; }
+    if (!clientIdGueltig(clientId())) return;
+    if (!window.google || !google.accounts || !google.accounts.oauth2) { if (++googleVersuche < 40) setTimeout(initGoogle, 300); else setStatus('Google-Anmeldung konnte nicht geladen werden. Internetverbindung oder Browser-Schutz prüfen und Seite neu laden.'); return; }
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: clientId(),
       scope: SCOPE,
+      error_callback: function (err) {
+        setStatus('Google-Anmeldung: ' + (err.type || 'Unbekannter Fehler') + '. Aktuelle Quelle: ' + location.origin);
+      },
       callback: function (resp) {
         if (resp && resp.access_token) {
           accessToken = resp.access_token;
@@ -477,16 +483,16 @@
           aktualisiereButtons();
           sync(false);
         } else {
-          setStatus('Anmeldung nicht abgeschlossen.');
+          setStatus('Google-Anmeldung: ' + ((resp && (resp.error_description || resp.error)) || 'Nicht abgeschlossen') + '. Quelle: ' + location.origin);
         }
       }
     });
   }
 
   function anmelden() {
-    if (clientId().indexOf('HIER_') === 0) { setStatus('Bitte zuerst die Client-ID unter ⚙️ Einstellungen eintragen.'); return; }
+    if (!clientIdGueltig(clientId())) { setStatus('Bitte zuerst die Client-ID unter ⚙️ Einstellungen eintragen.'); return; }
     if (!tokenClient) { setStatus('Google-Anmeldung lädt noch, bitte gleich nochmal tippen.'); return; }
-    tokenClient.requestAccessToken({ prompt: '' });
+    try { tokenClient.requestAccessToken({ prompt: '' }); } catch (e) { setStatus('Google-Anmeldung: ' + e.message); }
   }
 
   /* ---------- Google Drive ---------- */
@@ -840,7 +846,7 @@
     html += '<div class="kat">' + esc(r.kat || 'Rezepte') + '</div>';
 
     var link = sichererLink(r.link);
-    if (link) html += '<a class="linkbtn" href="' + esc(link) + '" target="_blank" rel="noopener">▶ Video öffnen</a>';
+    if (link) html += '<a class="linkbtn" href="' + esc(link) + '" target="_blank" rel="noopener">▶ Rezeptquelle öffnen</a>';
 
     var bilder = r.bilder || [];
     if (bilder[0]) html += '<div style="height:8px"></div><img src="' + bilder[0] + '" alt="Essen">';
@@ -888,7 +894,7 @@
     });
 
     html += '<div class="aktionen">';
-    if (hatBild(r)) html += '<button class="ghost" id="neuAuslesenBtn">↻ Neu auslesen</button>';
+    if (hatQuelle(r)) html += '<button class="ghost" id="neuAuslesenBtn">↻ Neu auslesen</button>';
     html += '<button class="ghost" id="bearbeitenBtn">Bearbeiten</button>' +
             '<button class="danger" id="loeschenEinzelBtn">Löschen</button></div>';
 
@@ -1055,13 +1061,14 @@
 
     var alt = editId ? rezepte.find(function (x) { return x.id === editId; }) : null;
     var neueBilder = formBilder.slice();
-    var bilderGleich = alt && (alt.bilder || []).join('|') === neueBilder.join('|');
+    var neuerLink = sichererLink($('fLink').value);
+    var bilderGleich = alt && (alt.bilder || []).join('|') === neueBilder.join('|') && sichererLink(alt.link) === neuerLink;
 
     var obj = {
       id: editId || String(Date.now()),
       titel: titel,
       kat: $('fKat').value.trim() || 'Rezepte',
-      link: $('fLink').value.trim(),
+      link: neuerLink,
       bilder: neueBilder,
       erstellt: alt ? alt.erstellt : Date.now(),
       auslesen: (alt && bilderGleich) ? (alt.auslesen || null) : null,
@@ -1226,7 +1233,7 @@
 
   /* ---------- Einstellungen ---------- */
   function zeigeSettings() {
-    $('sClient').value = localStorage.getItem('clientId') || '';
+    $('sClient').value = clientIdGueltig(clientId()) ? clientId() : '';
     $('sOrdner').value = localStorage.getItem('ordnerId') || '(noch nicht angelegt: erst mit Google anmelden)';
     $('sKonto').textContent = tokenGueltig()
       ? 'Angemeldet. Die Anmeldung gilt etwa eine Stunde, danach tippst du wieder auf „Mit Google anmelden“.'
@@ -1237,7 +1244,9 @@
   $('settingsZu').addEventListener('click', function () { $('settingsView').classList.add('hidden'); });
   $('sClientSave').addEventListener('click', function () {
     var v = $('sClient').value.trim();
-    if (v) localStorage.setItem('clientId', v); else localStorage.removeItem('clientId');
+    if (!clientIdGueltig(v)) { alert('Bitte die vollständige OAuth-Client-ID eingeben (endet auf .apps.googleusercontent.com). Kein Client-Secret!'); return; }
+    if (v !== clientId()) localStorage.removeItem('gtoken');
+    localStorage.setItem('clientId', v);
     location.reload();
   });
   $('sKopieren').addEventListener('click', function () {
@@ -1275,11 +1284,11 @@
       $('liste').innerHTML = '<div class="leerhinweis">Der Speicher im Browser ist nicht verfügbar.<br>Öffne die Seite nicht im privaten Modus.</div>';
       return;
     }
-    tokenAusSpeicher();
+    if (clientIdGueltig(clientId())) tokenAusSpeicher();
     initGoogle();
     aktualisiereButtons();
     if (tokenGueltig()) sync(true);
-    else if (clientId().indexOf('HIER_') === 0) setStatus('Bitte unter ⚙️ Einstellungen die Google Client-ID eintragen.');
+    else if (!clientIdGueltig(clientId())) setStatus('Bitte unter ⚙️ Einstellungen die Google Client-ID eintragen.');
     else setStatus('Nicht angemeldet. Du siehst die zuletzt geladenen Rezepte.');
   })();
 </script>
